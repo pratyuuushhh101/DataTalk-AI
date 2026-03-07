@@ -1,0 +1,31 @@
+# Root project gitignore
+# Node.js
+**/node_modules/
+**/dist/
+**/build/
+**/*.local
+
+# Local Environment secrets
+**/.env
+**/.env.*
+
+# Logs
+**/*.log
+**/logs/
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Speech processing
+**/*.wav
+**/*.mp3
+**/*.webm
+**/*.wav.json
+
+# IDE config
+.vscode/
+.idea/

@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary-purple: #6F42C1;
+  --color-primary-blue: #007BFF;
+  --color-supporting-teal: #00CCCC;
+  --color-supporting-cyan: #0DCAF0;
+  --color-supporting-info: #17A2B8;
+  --color-background: #F8F9FA;
+  --color-card-bg: #FFFFFF;
+}
+
+body {
+  @apply bg-background text-gray-800 antialiased font-sans;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  @apply text-gray-900 font-semibold;
+}
+
+.card {
+  @apply bg-card-bg rounded-lg shadow-sm border border-gray-100 overflow-hidden;
+}
