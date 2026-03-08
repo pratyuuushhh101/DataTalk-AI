@@ -1,0 +1,63 @@
+# Backend Integration Guide (For Priyanshu)
+
+This document explains what Priyanshu needs to add to his **Backend Node.js server** (specifically inside `src/controllers/nlQuery.controller.js`) to get the multilingual Business Insights working.
+
+### 1. The Goal
+After Priyanshu's backend executes the AI-generated SQL query against the Azure Database, he gets an array of rows back. Before he sends that data to the Frontend, he needs to make one quick HTTP call to your AI Core (`port 8000`) to get the Markdown text insight, and attach it to the final response.
+
+### 2. The Code Updates
+
+He needs to open his `src/controllers/nlQuery.controller.js` file and make the following small additions:
+
+**A. Import Axios (at the top of the file):**
+import axios from "axios";
+
+**B. Add the Insight API Call:**
+Find the part of his code where he successfully executes the SQL query against Azure and has the result (`result.recordset`). Add the new code block right after it:
+
+export const handleNLQuery = async (req, res) => {
+    try {
+        const { question } = req.body;
+        
+        // 1. ... (Previous code: Calls your /generate-sql endpoint)
+        // 2. ... (Previous code: Executes the SQL against Azure DB)
+        
+        const dataRows = result.recordset; // The array of data from Azure SQL
+
+        // ==========================================
+        // 3. NEW CODE TO ADD: Get the AI Insight
+        // ==========================================
+        let generatedInsight = "Insight generation failed or timed out.";
+        try {
+            // Call Pratyush's AI Core on Port 8000
+            const insightResponse = await axios.post("http://localhost:8000/generate-insight", {
+                question: question,
+                data: dataRows
+            });
+            
+            // Extract the markdown text
+            generatedInsight = insightResponse.data.insight;
+            
+        } catch (aiError) {
+            console.error("Warning: AI Insight Generation Failed:", aiError.message);
+            // We use a try/catch so to not break the app if the AI is slow
+        }
+        // ==========================================
+
+        // 4. Update the final Return statement to include the insight
+        return res.status(200).json({
+            message: "Query executed successfully",
+            generatedSQL: sql,
+            rowsReturned: dataRows.length,
+            data: dataRows,
+            insight: generatedInsight // <--- JUST ADD THIS ONE NEW FIELD
+        });
+
+    } catch (error) {
+        console.error("Error executing natural language query:", error);
+        res.status(500).json({ error: "Failed to process query", details: error.message });
+    }
+};
+
+### Why Do It Like This?
+By wrapping the Axios call in a `try/catch`, it ensures that even if your AI Core (`port 8000`) crashes or times out, Priyanshu's backend will still successfully return the core data to the user without breaking the whole website.

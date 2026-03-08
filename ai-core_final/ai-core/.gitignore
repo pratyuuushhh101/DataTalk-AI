@@ -1,0 +1,13 @@
+node_modules/
+.env
+.DS_Store
+gemini-test-folder/
+*.log
+*.wav
+*.mp3
+*.webm
+dist/
+build/
+*.wav
+*.ogg
+*.wav.json
