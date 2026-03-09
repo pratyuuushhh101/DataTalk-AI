@@ -8,6 +8,7 @@ import ProfitAnalysisPage from './pages/ProfitAnalysisPage';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import LandingPage from './pages/LandingPage';
+import UnderConstruction from './pages/UnderConstruction';
 import Layout from './components/Layout';
 
 // Shared page transition configuration
@@ -72,6 +73,14 @@ const AnimatedRoutes = () => {
           <motion.div {...pageTransition} className="h-full">
             <Layout>
               <ProfitAnalysisPage />
+            </Layout>
+          </motion.div>
+        } />
+
+        <Route path="/under-construction" element={
+          <motion.div {...pageTransition} className="h-full">
+            <Layout>
+              <UnderConstruction />
             </Layout>
           </motion.div>
         } />
