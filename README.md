@@ -21,14 +21,3 @@ Built with:
 ## Demo
 🎥 [Watch the Demo](https://vimeo.com/1171661708)
 
-
-
-## Setup
-
-Install dependencies
-
-npm install
-
-Run development server
-
-npm run dev
