@@ -1,13 +1,6 @@
 # DataTalk-AI
 AI-powered data analytics platform that converts natural language queries into SQL and visual insights.
 
-## Frontend
-Built with:
-- React
-- Vite
-- TailwindCSS
-- Recharts
-
 ## Features
 - Natural language to SQL queries
 - Data visualization dashboard
