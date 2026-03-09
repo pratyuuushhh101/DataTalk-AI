@@ -13,7 +13,7 @@ app.use(cors());
 app.use(express.json());
 app.use("/nl-query", nlQueryRoute);
 
-connectDB();
+// connectDB();
 
 app.get("/", (req, res) => {
   res.send("Backend running");
@@ -40,6 +40,21 @@ app.get("/test-insert", async (req, res) => {
 app.use("/upload", uploadRoute);
 app.use("/query", queryRoute);
 
-app.listen(5000, () => {
-  console.log("Server running on port 5000");
-});
+// app.listen(5000, () => {
+//   console.log("Server running on port 5000");
+// });
+const startServer = async () => {
+  try {
+    await connectDB();   // wait until DB connects
+
+    app.listen(5000, () => {
+      console.log("Server running on port 5000");
+    });
+
+  } catch (err) {
+    console.error("Failed to start server:", err);
+    process.exit(1);
+  }
+};
+
+startServer();
