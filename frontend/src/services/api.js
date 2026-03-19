@@ -11,16 +11,30 @@ const api = axios.create({
 });
 
 // --- REAL FILE UPLOAD FUNCTION ---
-// --- MOCK UPLOAD FUNCTION ---
 export const uploadFile = async (file) => {
-    console.log("Mocking upload for:", file.name);
+    console.log("Real upload for:", file.name);
 
-    // Simulate network delay
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            resolve({ success: true, message: "Dataset uploaded successfully." });
-        }, 1500);
-    });
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        // Post to the backend's /upload route
+        const response = await api.post('/upload', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data'
+            }
+        });
+
+        return {
+            success: true,
+            message: `Successfully inserted ${response.data.rowsInserted} rows.`
+        };
+    } catch (error) {
+        console.error("Upload error:", error);
+        throw new Error(
+            error.response?.data?.error || 'Failed to upload dataset.'
+        );
+    }
 };
 
 // --- REAL NL QUERY FUNCTION ---

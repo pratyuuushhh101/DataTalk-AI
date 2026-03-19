@@ -57,6 +57,24 @@ export const handleUpload = async (req, res) => {
 
     const pool = getAdminPool();
 
+    // Ensure the table exists before inserting
+    await pool.request().query(`
+      IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='sales_data' AND xtype='U')
+      CREATE TABLE sales_data (
+          id INT IDENTITY(1,1) PRIMARY KEY,
+          transaction_date VARCHAR(255),
+          product VARCHAR(255),
+          category VARCHAR(255),
+          quantity INT,
+          unit_cost FLOAT,
+          unit_price FLOAT,
+          region VARCHAR(255),
+          revenue FLOAT,
+          total_cost FLOAT,
+          profit FLOAT
+      )
+    `);
+
     for (const row of rows) {
       const quantity = parseInt(row.quantity);
       const unitCost = parseFloat(row.unit_cost);
