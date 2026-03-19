@@ -50,7 +50,7 @@ const LandingPage = () => {
 
                         {/* CTA */}
                         <button
-                            onClick={() => navigate('/login')}
+                            onClick={() => navigate('/datatalk')}
                             className="bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all hover:border-[#B5FF7D]/50 flex items-center gap-2"
                         >
                             Launch App <ArrowRight size={16} className="text-[#B5FF7D]" />
@@ -73,7 +73,7 @@ const LandingPage = () => {
                         </p>
                         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                             <button
-                                onClick={() => navigate('/login')}
+                                onClick={() => navigate('/datatalk')}
                                 className="w-full sm:w-auto bg-[#B5FF7D] hover:bg-[#a2e570] text-black font-semibold rounded-xl py-3.5 px-8 flex items-center justify-center gap-2 transition-all shadow-[0_4px_14px_0_rgba(181,255,125,0.2)] hover:shadow-[0_6px_20px_rgba(181,255,125,0.3)] text-lg group"
                             >
                                 Try Demo <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
@@ -174,7 +174,7 @@ const LandingPage = () => {
                             <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">Start Exploring Your Data</h2>
                             <p className="text-xl text-gray-400 mb-10 max-w-xl mx-auto">Stop writing boilerplate queries. Unleash the power of AI on your datasets today.</p>
                             <button
-                                onClick={() => navigate('/login')}
+                                onClick={() => navigate('/datatalk')}
                                 className="bg-[#B5FF7D] hover:bg-[#a2e570] text-black font-semibold rounded-xl py-4 px-10 text-lg transition-all shadow-[0_4px_14px_0_rgba(181,255,125,0.2)] hover:shadow-[0_6px_20px_rgba(181,255,125,0.3)] hover:scale-105"
                             >
                                 Launch Dashboard

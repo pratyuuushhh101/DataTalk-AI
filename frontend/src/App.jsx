@@ -5,8 +5,6 @@ import Dashboard from './pages/Dashboard';
 import DataLedgerPage from './pages/DataLedgerPage';
 import QuickReportsPage from './pages/QuickReportsPage';
 import ProfitAnalysisPage from './pages/ProfitAnalysisPage';
-import Login from './pages/Login';
-import Signup from './pages/Signup';
 import LandingPage from './pages/LandingPage';
 import UnderConstruction from './pages/UnderConstruction';
 import WhatsAppChatbotPage from './pages/WhatsAppChatbotPage';
@@ -30,18 +28,6 @@ const AnimatedRoutes = () => {
         <Route path="/" element={
           <motion.div {...pageTransition} className="h-full">
             <LandingPage />
-          </motion.div>
-        } />
-
-        {/* Auth Routes */}
-        <Route path="/login" element={
-          <motion.div {...pageTransition} className="h-full">
-            <Login />
-          </motion.div>
-        } />
-        <Route path="/signup" element={
-          <motion.div {...pageTransition} className="h-full">
-            <Signup />
           </motion.div>
         } />
 
