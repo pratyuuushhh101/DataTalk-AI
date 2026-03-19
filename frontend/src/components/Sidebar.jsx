@@ -88,7 +88,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
                     </Link>
 
                     {/* WhatsApp Chatbot Card */}
-                    <Link to="/under-construction" state={{ fromWhatsApp: true }} className="mt-4 block animate-fade-in outline-none">
+                    <Link to="/whatsapp" className="mt-4 block animate-fade-in outline-none">
                         <div className={`p-3 rounded-2xl bg-white/5 border border-white/5 hover:border-[#25D366]/30 hover:bg-[#25D366]/5 transition-all duration-300 ${isCollapsed ? 'flex justify-center' : ''}`}>
                             <div className="flex flex-col gap-2">
                                 <div className="flex items-center gap-2">

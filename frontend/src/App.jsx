@@ -9,6 +9,7 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import LandingPage from './pages/LandingPage';
 import UnderConstruction from './pages/UnderConstruction';
+import WhatsAppChatbotPage from './pages/WhatsAppChatbotPage';
 import Layout from './components/Layout';
 
 // Shared page transition configuration
@@ -81,6 +82,14 @@ const AnimatedRoutes = () => {
           <motion.div {...pageTransition} className="h-full">
             <Layout>
               <UnderConstruction />
+            </Layout>
+          </motion.div>
+        } />
+
+        <Route path="/whatsapp" element={
+          <motion.div {...pageTransition} className="h-full">
+            <Layout>
+              <WhatsAppChatbotPage />
             </Layout>
           </motion.div>
         } />

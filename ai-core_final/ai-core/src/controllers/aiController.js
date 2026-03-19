@@ -62,17 +62,23 @@ const { generateInsightFromLLM } = require("../services/aiService");
 
 exports.generateInsight = async (req, res) => {
     try {
-        const { question, data } = req.body;
+        const { question, data, customPrompt } = req.body;
 
         if (!question || !data) {
             return res.status(400).json({ error: "Both 'question' and 'data' are required." });
         }
 
-        // 1. Build the prompt
-        let finalPrompt = INSIGHT_PROMPT_TEMPLATE.replace("{user_query}", question);
-        finalPrompt = finalPrompt.replace("{json_data}", JSON.stringify(data, null, 2));
+        // Allow callers (e.g. WhatsApp webhook) to provide a fully-built prompt.
+        // If no customPrompt is provided, fall back to the default template.
+        let finalPrompt;
+        if (customPrompt) {
+            finalPrompt = customPrompt;
+        } else {
+            finalPrompt = INSIGHT_PROMPT_TEMPLATE.replace("{user_query}", question);
+            finalPrompt = finalPrompt.replace("{json_data}", JSON.stringify(data, null, 2));
+        }
 
-        // 2. Query Gemini
+        // 2. Query Mistral
         const insightText = await generateInsightFromLLM(finalPrompt);
 
         // 3. Return to Backend

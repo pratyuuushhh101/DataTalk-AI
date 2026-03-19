@@ -6,12 +6,16 @@ import { connectDB } from "./config/db.js";
 import uploadRoute from "./routes/upload.routes.js";
 import queryRoute from "./routes/query.routes.js";
 import nlQueryRoute from "./routes/nlQuery.routes.js";
+import whatsappRoute from "./routes/whatsapp.routes.js";
 dotenv.config();
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+// Required to parse Twilio's application/x-www-form-urlencoded webhook body
+app.use(express.urlencoded({ extended: false }));
 app.use("/nl-query", nlQueryRoute);
+app.use("/whatsapp", whatsappRoute);
 
 // connectDB();
 

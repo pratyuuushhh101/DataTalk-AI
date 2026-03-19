@@ -18,6 +18,7 @@
     "express": "^5.2.1",
     "mssql": "^12.2.0",
     "multer": "^2.1.0",
+    "twilio": "^5.13.0",
     "zod": "^4.3.6"
   },
   "type": "module"
