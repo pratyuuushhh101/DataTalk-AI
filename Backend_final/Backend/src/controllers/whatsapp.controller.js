@@ -27,6 +27,8 @@ CRITICAL RULES:
 4. Do NOT mention "SQL", "JSON", or "database" in your response.
 5. Do NOT hallucinate. Only use the data provided.
 6. Start directly with the insight — no greeting, no "Sure! Here is your insight:".
+7. If formatting currency or money, ALWAYS use the Indian Rupee symbol (₹). NEVER use the Dollar sign ($).
+8. If showing a quantity, count, or total number of units, DO NOT use any currency symbol.
 
 User's Question: "${question}"
 

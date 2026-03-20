@@ -15,7 +15,8 @@ CRITICAL RULES:
 6. Keep the insight under 3-4 bullet points per language.
 7. Do not hallucinate data. Only use the data provided in the JSON array below.
 8. Do not mention "SQL" or "JSON" in your response.
-
+9. If formatting currency or money, ALWAYS use the Indian Rupee symbol (₹). NEVER use the Dollar sign ($).
+10. If showing a quantity, count, or total number of units sold, DO NOT use any currency symbol at all.
 ==========
 USER'S ORIGINAL QUESTION:
 "{user_query}"

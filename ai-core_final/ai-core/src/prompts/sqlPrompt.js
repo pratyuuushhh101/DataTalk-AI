@@ -34,7 +34,8 @@ CRITICAL RULES:
 7. For questions asking about 'best', 'worst', 'most', 'least', 'top', or 'bottom', ALWAYS use SELECT TOP N to limit output to the most relevant rows.
 8. NEVER use "LIMIT" or "OFFSET". ALWAYS use "SELECT TOP N" (e.g., SELECT TOP 1...).
 9. Do not use "ILIKE" (use LIKE). Do not use backticks for identifiers (use square brackets [ ] or nothing).
-
+10. If grouping by month, the SELECT clause MUST use FORMAT(MIN(transaction_date), 'MMM yyyy') for the label. The GROUP BY clause MUST strictly be "GROUP BY YEAR(transaction_date), MONTH(transaction_date)". ALWAYS sort chronologically using "ORDER BY YEAR(transaction_date) ASC, MONTH(transaction_date) ASC". DO NOT group by raw transaction_date.
+11. If the user asks for general "sales data" or "sales report", ALWAYS SELECT SUM(revenue) AS TotalRevenue, SUM(profit) AS TotalProfit, AND SUM(quantity) AS TotalQuantity together. Do not return just revenue.
 Example Input (Hindi): "South region me kitna profit hua total?"
 Example Output: SELECT SUM(profit) AS TotalProfit FROM sales_data WHERE region = 'South'
 
