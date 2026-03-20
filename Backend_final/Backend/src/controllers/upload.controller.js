@@ -62,7 +62,7 @@ export const handleUpload = async (req, res) => {
       IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='sales_data' AND xtype='U')
       CREATE TABLE sales_data (
           id INT IDENTITY(1,1) PRIMARY KEY,
-          transaction_date VARCHAR(255),
+          transaction_date DATE,
           product VARCHAR(255),
           category VARCHAR(255),
           quantity INT,
@@ -80,8 +80,24 @@ export const handleUpload = async (req, res) => {
       const unitCost = parseFloat(row.unit_cost);
       const unitPrice = parseFloat(row.unit_price);
 
-      if (isNaN(quantity) || isNaN(unitCost) || isNaN(unitPrice)) {
-        return res.status(400).json({ error: "Invalid numeric values in CSV" });
+      // Bulletproof Date Parsing
+      let formattedDate = null;
+      if (row.transaction_date) {
+        let d = new Date(row.transaction_date);
+        // JS Date parsing success
+        if (!isNaN(d.getTime())) {
+          formattedDate = d.toISOString().split('T')[0];
+        } else {
+          // Fallback for DD/MM/YYYY or DD-MM-YYYY
+          const parts = String(row.transaction_date).split(/[-/]/);
+          if (parts.length === 3 && parts[2].length === 4) {
+            formattedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+          }
+        }
+      }
+
+      if (isNaN(quantity) || isNaN(unitCost) || isNaN(unitPrice) || !formattedDate) {
+        return res.status(400).json({ error: "Invalid numeric or date values in CSV. Check format." });
       }
 
       const revenue = quantity * unitPrice;
@@ -89,7 +105,7 @@ export const handleUpload = async (req, res) => {
       const profit = revenue - totalCost;
 
       await pool.request()
-        .input("transaction_date", sql.VarChar, row.transaction_date)
+        .input("transaction_date", sql.Date, formattedDate)
         .input("product", sql.VarChar, row.product)
         .input("category", sql.VarChar, row.category)
         .input("quantity", sql.Int, quantity)
