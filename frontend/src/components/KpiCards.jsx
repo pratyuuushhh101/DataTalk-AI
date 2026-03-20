@@ -3,16 +3,16 @@ import { IndianRupee, TrendingUp, Percent, Award } from 'lucide-react';
 import Card from './Card';
 
 const ICON_MAP = {
+    quantity: <Award className="w-5 h-5" />,
+    count: <Award className="w-5 h-5" />,
+    margin: <Percent className="w-5 h-5" />,
     revenue: <IndianRupee className="w-5 h-5" />,
     sales: <IndianRupee className="w-5 h-5" />,
-    amount: <IndianRupee className="w-5 h-5" />,
-    total: <IndianRupee className="w-5 h-5" />,
     price: <IndianRupee className="w-5 h-5" />,
     cost: <IndianRupee className="w-5 h-5" />,
     profit: <TrendingUp className="w-5 h-5" />,
-    margin: <Percent className="w-5 h-5" />,
-    quantity: <Award className="w-5 h-5" />,
-    count: <Award className="w-5 h-5" />,
+    total: <IndianRupee className="w-5 h-5" />,
+    amount: <IndianRupee className="w-5 h-5" />,
 };
 
 const GRADIENT_BORDERS = [
