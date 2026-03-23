@@ -7,17 +7,32 @@ import uploadRoute from "./routes/upload.routes.js";
 import queryRoute from "./routes/query.routes.js";
 import nlQueryRoute from "./routes/nlQuery.routes.js";
 import whatsappRoute from "./routes/whatsapp.routes.js";
+import analyzeRoute from "./routes/analyze.routes.js";
+import transactionRoutes from "./routes/transaction.routes.js";
+import debugRoutes from "./routes/debug.routes.js";
+import { startCronJobs } from "./jobs/cron.js";
+
 dotenv.config();
 const app = express();
 
+// 1. Global Request Logger (Method, URL, Timestamp)
+app.use((req, res, next) => {
+  const timestamp = new Date().toISOString();
+  console.log(`[HTTP] ${req.method} ${req.url} - ${timestamp}`);
+  next();
+});
+
 app.use(cors());
+
+// 2. Strict Body Parsing (Critical for Twilio)
 app.use(express.json());
-// Required to parse Twilio's application/x-www-form-urlencoded webhook body
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: true }));
+
 app.use("/nl-query", nlQueryRoute);
 app.use("/whatsapp", whatsappRoute);
-
-// connectDB();
+app.use("/twilio-debug", debugRoutes);
+app.use("/api/analyze", analyzeRoute);
+app.use("/api", transactionRoutes);
 
 app.get("/", (req, res) => {
   res.send("Backend running");
@@ -47,18 +62,31 @@ app.use("/query", queryRoute);
 // app.listen(5000, () => {
 //   console.log("Server running on port 5000");
 // });
-const startServer = async () => {
-  try {
-    await connectDB();   // wait until DB connects
+// ─── STARTUP LOGIC ──────────────────────────────────────────────────────────
 
-    app.listen(5000, () => {
-      console.log("Server running on port 5000");
+const PORT = process.env.PORT || 5000;
+
+connectDB()
+  .then(() => {
+    const server = app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      // Boot the AI Watchdog capabilities
+      startCronJobs();
     });
 
-  } catch (err) {
-    console.error("Failed to start server:", err);
+    // Graceful error handling mapping to close the server
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use. Please close any running terminals or instances.`);
+        process.exit(1);
+      } else {
+        console.error("Server encountered an error:", err);
+        process.exit(1);
+      }
+    });
+  })
+  .catch((err) => {
+    console.error("Failed to connect to the database:", err);
     process.exit(1);
-  }
-};
+  });
 
-startServer();

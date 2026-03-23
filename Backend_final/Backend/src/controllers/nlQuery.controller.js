@@ -1,5 +1,5 @@
 import axios from "axios";
-import { getReadPool } from "../config/db.js";
+import { getPool } from "../config/db.js";
 
 export const handleNLQuery = async (req, res) => {
   const { question } = req.body;
@@ -25,7 +25,7 @@ export const handleNLQuery = async (req, res) => {
     // 2️⃣ Execute validated SQL safely
     let dataRows = [];
     try {
-      const pool = getReadPool();
+      const pool = getPool();
       const request = pool.request();
       request.timeout = 5000;
 

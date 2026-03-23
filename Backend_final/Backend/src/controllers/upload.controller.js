@@ -2,7 +2,8 @@ import { uploadToBlob } from "../services/blob.service.js";
 import csv from "csv-parser";
 import fs from "fs";
 import sql from "mssql";
-import { getAdminPool } from "../config/db.js";
+import { getPool } from "../config/db.js";
+import { normalizeProductName } from "../utils/normalization.js";
 
 const REQUIRED_COLUMNS = [
   "transaction_date",
@@ -55,7 +56,7 @@ export const handleUpload = async (req, res) => {
       return res.status(400).json({ error: "CSV is empty" });
     }
 
-    const pool = getAdminPool();
+    const pool = getPool();
 
     // Ensure the table exists before inserting
     await pool.request().query(`
@@ -64,6 +65,7 @@ export const handleUpload = async (req, res) => {
           id INT IDENTITY(1,1) PRIMARY KEY,
           transaction_date DATE,
           product VARCHAR(255),
+          product_normalized VARCHAR(255),
           category VARCHAR(255),
           quantity INT,
           unit_cost FLOAT,
@@ -79,6 +81,7 @@ export const handleUpload = async (req, res) => {
       const quantity = parseInt(row.quantity);
       const unitCost = parseFloat(row.unit_cost);
       const unitPrice = parseFloat(row.unit_price);
+      const normalized = normalizeProductName(row.product);
 
       // Bulletproof Date Parsing
       let formattedDate = null;
@@ -107,6 +110,7 @@ export const handleUpload = async (req, res) => {
       await pool.request()
         .input("transaction_date", sql.Date, formattedDate)
         .input("product", sql.VarChar, row.product)
+        .input("product_normalized", sql.VarChar, normalized)
         .input("category", sql.VarChar, row.category)
         .input("quantity", sql.Int, quantity)
         .input("unit_cost", sql.Float, unitCost)
@@ -117,9 +121,9 @@ export const handleUpload = async (req, res) => {
         .input("profit", sql.Float, profit)
         .query(`
           INSERT INTO sales_data
-          (transaction_date, product, category, quantity, unit_cost, unit_price, region, revenue, total_cost, profit)
+          (transaction_date, product, product_normalized, category, quantity, unit_cost, unit_price, region, revenue, total_cost, profit)
           VALUES
-          (@transaction_date, @product, @category, @quantity, @unit_cost, @unit_price, @region, @revenue, @total_cost, @profit)
+          (@transaction_date, @product, @product_normalized, @category, @quantity, @unit_cost, @unit_price, @region, @revenue, @total_cost, @profit)
         `);
     }
 

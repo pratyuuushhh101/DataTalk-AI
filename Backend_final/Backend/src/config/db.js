@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const baseConfig = {
+const config = {
   server: process.env.DB_SERVER,
   database: process.env.DB_NAME,
   port: parseInt(process.env.DB_PORT),
@@ -12,25 +12,30 @@ const baseConfig = {
   options: {
     encrypt: true,
     trustServerCertificate: false
+  },
+  pool: {
+    max: 10,
+    min: 0,
+    idleTimeoutMillis: 30000
   }
 };
 
-let adminPool;
-let readPool;
+let pool;
 
 export const connectDB = async () => {
   try {
-    adminPool = await sql.connect(baseConfig);
-    console.log("Admin DB Connected");
-
-    readPool = await new sql.ConnectionPool(baseConfig).connect();
-    console.log("Read-only DB Connected");
-
+    pool = await sql.connect(config);
+    console.log("✅ Connected to Azure SQL");
   } catch (err) {
-    console.error("DB Connection Failed:", err);
+    console.error("❌ DB Connection Failed:", err.message);
     throw err;
   }
 };
 
-export const getAdminPool = () => adminPool;
-export const getReadPool = () => readPool;
+// Guarantee the pool is valid before anything uses it
+export const getPool = () => {
+  if (!pool) {
+    throw new Error("❌ Database Connection Pool is not initialized!");
+  }
+  return pool;
+};

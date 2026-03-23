@@ -1,4 +1,4 @@
-const { SQL_PROMPT_TEMPLATE } = require("../prompts/sqlPrompt");
+const { SQL_SYSTEM_PROMPT, SQL_USER_PROMPT_TEMPLATE } = require("../prompts/sqlPrompt");
 const { generateSQLFromLLM } = require("../services/aiService");
 
 /**
@@ -34,11 +34,11 @@ exports.generateSQL = async (req, res) => {
             return res.status(400).json({ error: "Question is required." });
         }
 
-        // 1. Build the prompt with the user's question
-        const finalPrompt = SQL_PROMPT_TEMPLATE.replace("{user_query}", question);
+        // 1. Build the prompts
+        const userPrompt = SQL_USER_PROMPT_TEMPLATE.replace("{user_query}", question);
 
-        // 2. Query Gemini
-        const rawSql = await generateSQLFromLLM(finalPrompt);
+        // 2. Query Azure OpenAI (Brain Engine)
+        const rawSql = await generateSQLFromLLM(SQL_SYSTEM_PROMPT, userPrompt);
         console.log("Raw SQL from LLM:", rawSql);
 
         // 3. Apply Local Guardrails
@@ -57,7 +57,7 @@ exports.generateSQL = async (req, res) => {
     }
 };
 
-const { INSIGHT_PROMPT_TEMPLATE } = require("../prompts/insightPrompt");
+const { INSIGHT_SYSTEM_PROMPT, INSIGHT_USER_PROMPT_TEMPLATE } = require("../prompts/insightPrompt");
 const { generateInsightFromLLM } = require("../services/aiService");
 
 exports.generateInsight = async (req, res) => {
@@ -68,18 +68,19 @@ exports.generateInsight = async (req, res) => {
             return res.status(400).json({ error: "Both 'question' and 'data' are required." });
         }
 
-        // Allow callers (e.g. WhatsApp webhook) to provide a fully-built prompt.
-        // If no customPrompt is provided, fall back to the default template.
-        let finalPrompt;
+        // Allow callers to provide completely custom prompts if needed, but gracefully integrate them.
+        let systemPrompt = INSIGHT_SYSTEM_PROMPT;
+        let userPrompt;
+
         if (customPrompt) {
-            finalPrompt = customPrompt;
+            userPrompt = customPrompt; // Legacy fallback
         } else {
-            finalPrompt = INSIGHT_PROMPT_TEMPLATE.replace("{user_query}", question);
-            finalPrompt = finalPrompt.replace("{json_data}", JSON.stringify(data, null, 2));
+            userPrompt = INSIGHT_USER_PROMPT_TEMPLATE.replace("{user_query}", question);
+            userPrompt = userPrompt.replace("{json_data}", JSON.stringify(data, null, 2));
         }
 
-        // 2. Query Mistral
-        const insightText = await generateInsightFromLLM(finalPrompt);
+        // 2. Query Azure OpenAI (Brain Engine)
+        const insightText = await generateInsightFromLLM(systemPrompt, userPrompt);
 
         // 3. Return to Backend
         res.json({ insight: insightText });
@@ -87,5 +88,85 @@ exports.generateInsight = async (req, res) => {
     } catch (error) {
         console.error("Controller Error (Insight):", error);
         res.status(500).json({ error: "Failed to generate Insights." });
+    }
+};
+
+const { extractJSONFromSpeedEngine } = require("../services/aiService");
+
+exports.extractMessage = async (req, res) => {
+    try {
+        const { message } = req.body;
+        if (!message) return res.status(400).json({ error: "Message is required." });
+
+        const systemPrompt = `You are a production-grade Data Extractor for "DataTalk AI".
+Your task is to route the user's message to one of 5 strict intents and extract entities.
+
+INTENTS:
+1. TRANSACTION: Logging a sale. (e.g., "Sold 5 Parle-G", "Becha 2 oil")
+2. INVENTORY_QUERY: Checking current stock. (e.g., "How many milk left?", "Stock of atta?")
+3. ORDER: Buying from a supplier. (e.g., "Order Maggi", "I need to restock salt")
+4. BUSINESS_ANALYTICS: Advanced questions. (e.g., "Profit last week?", "Best selling product?")
+5. GUIDED: Generic chat, greeting, or help needed. (e.g., "Hi", "Help", "Who are you?")
+
+RULES:
+- Return ONLY raw JSON. No markdown.
+- For TRANSACTION, ORDER, and INVENTORY_QUERY, you MUST extract 'product'.
+- For TRANSACTION and ORDER, extract 'qty'. (If missing, return null).
+- Normalize product: Convert to lowercase, remove all spaces and hyphens. (e.g., "Parle-G" -> "parleg", "Amul Milk" -> "amulmilk").
+
+Output JSON:
+{
+  "intent": "TRANSACTION | INVENTORY_QUERY | ORDER | BUSINESS_ANALYTICS | GUIDED",
+  "product": "normalized_name",
+  "qty": integer_or_null,
+  "query": "original_question_for_analytics"
+}`;
+
+        const jsonString = await extractJSONFromSpeedEngine(systemPrompt, message);
+        let extractedData;
+        try {
+            extractedData = JSON.parse(jsonString);
+        } catch (e) {
+            return res.status(500).json({ error: "Extraction failed to return valid JSON." });
+        }
+
+        // Return to Backend for routing
+        return res.json({ action: "EXECUTE", data: extractedData });
+
+    } catch (error) {
+        console.error("Extraction Error:", error);
+        res.status(500).json({ error: "Failed to extract message." });
+    }
+};
+
+const { transcribeAudio } = require("../services/speech.service");
+const fs = require("fs");
+
+exports.transcribeVoice = async (req, res) => {
+    try {
+        // Expecting Priyanshu's backend to send the raw binary buffer or a Base64 string
+        let audioBuffer;
+
+        if (req.body.audioBase64) {
+            audioBuffer = Buffer.from(req.body.audioBase64, 'base64');
+        } else if (req.file && req.file.buffer) {
+            audioBuffer = req.file.buffer;
+        } else {
+            return res.status(400).json({ error: "No valid audio buffer provided." });
+        }
+
+        // Passing purely the audio buffer to the Azure Whisper Service
+        const transcript = await transcribeAudio(audioBuffer);
+
+        if (!transcript) {
+            return res.status(400).json({ error: "Silent Audio or Failed Transcription" });
+        }
+
+        // Return the natively translated text string to the backend
+        return res.json({ transcript });
+
+    } catch (error) {
+        console.error("Transcription Controller Error:", error);
+        res.status(500).json({ error: "Voice transcription failed." });
     }
 };

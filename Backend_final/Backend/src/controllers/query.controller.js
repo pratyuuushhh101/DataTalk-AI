@@ -1,10 +1,10 @@
-import { getReadPool } from "../config/db.js";
+import { getPool } from "../config/db.js";
 
 export const handleQuery = async (req, res) => {
   const { sql } = req.body;
 
   try {
-    const pool = getReadPool();
+    const pool = getPool();
 
     const request = pool.request();
     request.timeout = 5000;

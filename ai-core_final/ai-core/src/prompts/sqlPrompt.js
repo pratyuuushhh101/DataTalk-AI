@@ -1,21 +1,34 @@
 const SCHEMA_METADATA = `
-Table Name: sales_data
-Database: Microsoft SQL Server
+Table 1: sales_data
+- id (INT, PK, IDENTITY)
+- product (VARCHAR(100))
+- quantity (INT)
+- transaction_date (DATE)
+- region (VARCHAR(50))
+- category (VARCHAR(50))
+- revenue (FLOAT)
+- total_cost (FLOAT)
+- profit (FLOAT)
 
-Columns:
-- transaction_date (Date): The date the transaction occurred.
-- product (VARCHAR): The name of the product sold.
-- category (VARCHAR): The category the product belongs to.
-- quantity (INT): The number of items sold in the transaction.
-- unit_cost (FLOAT): The cost to produce/buy one unit.
-- unit_price (FLOAT): The price the unit was sold for.
-- region (VARCHAR): The geographic region where the sale occurred.
-- revenue (FLOAT): Total revenue from the transaction (quantity * unit_price).
-- total_cost (FLOAT): Total cost of the transaction (quantity * unit_cost).
-- profit (FLOAT): The profit made from the transaction (revenue - total_cost).
+Table 2: inventory
+- product (VARCHAR(100), PK)
+- category (VARCHAR(50))
+- current_stock (INT)
+- reorder_threshold (INT)
+- unit_cost (FLOAT)
+- selling_price (FLOAT)
+
+Table 3: suppliers
+- supplier_name (VARCHAR(100))
+- product (VARCHAR(100))
+- wholesale_price (FLOAT)
+- phone_number (VARCHAR(15))
+- credit_days (INT)
+- credit_limit (FLOAT)
+- cash_only (BIT)
 `;
 
-const SQL_PROMPT_TEMPLATE = `
+const SQL_SYSTEM_PROMPT = `
 You are an expert Microsoft SQL Server data analyst. 
 Your job is to convert natural language queries into safe, read-only MS SQL queries.
 The user may ask questions in English, Hindi, or Kannada. You must understand the intent perfectly.
@@ -44,11 +57,14 @@ Example Output: SELECT TOP 5 product, SUM(revenue) as TotalRevenue FROM sales_da
 
 Example Input (English): "least item sold"
 Example Output: SELECT TOP 1 product, SUM(quantity) as TotalSold FROM sales_data GROUP BY product ORDER BY TotalSold ASC
+`;
 
+const SQL_USER_PROMPT_TEMPLATE = `
 User Query: "{user_query}"
 `;
 
 module.exports = {
     SCHEMA_METADATA,
-    SQL_PROMPT_TEMPLATE,
+    SQL_SYSTEM_PROMPT,
+    SQL_USER_PROMPT_TEMPLATE,
 };
