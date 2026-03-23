@@ -36,10 +36,10 @@ export const startCronJobs = () => {
     cron.schedule('0 6 * * *', async () => {
         console.log("[Cron] Running 6AM Macro News Watchdog...");
         try {
-            const NEWS_API_KEY = "f6e0d625f607469da20dcaf0b46026ee"; // Natively injected from Pratyush
+            const apiKey = process.env.NEWS_API_KEY;
 
             // 1A. Fetch Top Business Headlines in India via NewsAPI.org
-            const newsRes = await axios.get(`https://newsapi.org/v2/top-headlines?country=in&category=business&pageSize=5&apiKey=${NEWS_API_KEY}`);
+            const newsRes = await axios.get(`https://newsapi.org/v2/top-headlines?country=in&category=business&pageSize=5&apiKey=${apiKey}`);
             const articles = newsRes.data.articles || [];
             if (articles.length === 0) return;
 
