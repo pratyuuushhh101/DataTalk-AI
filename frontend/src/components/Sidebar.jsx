@@ -9,7 +9,8 @@ import {
     Settings,
     LogOut,
     MessageSquare,
-    Camera
+    Camera,
+    Target
 } from 'lucide-react';
 
 
@@ -42,6 +43,14 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
                         <Link to="/ledger" className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors group ${isActive('/ledger') ? 'bg-[#B5FF7D] text-black font-semibold shadow-sm' : 'text-gray-400 hover:text-white hover:bg-white/5 font-medium'} ${isCollapsed ? 'justify-center' : ''}`}>
                             <Database size={18} className="shrink-0" />
                             {!isCollapsed && <span className="text-sm">Data Ledger</span>}
+                        </Link>
+                        <Link to="/sync" className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors group ${isActive('/sync') ? 'bg-[#B5FF7D] text-black font-semibold shadow-sm' : 'text-gray-400 hover:text-white hover:bg-white/5 font-medium'} ${isCollapsed ? 'justify-center' : ''}`}>
+                            <Zap size={18} className="shrink-0" />
+                            {!isCollapsed && <span className="text-sm">Sync Center</span>}
+                        </Link>
+                        <Link to="/founder" className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors group ${isActive('/founder') ? 'bg-[#B5FF7D] text-black font-semibold shadow-sm' : 'text-gray-400 hover:text-white hover:bg-white/5 font-medium'} ${isCollapsed ? 'justify-center' : ''}`}>
+                            <Target size={18} className="shrink-0" />
+                            {!isCollapsed && <span className="text-sm">Founder Kit</span>}
                         </Link>
                     </div>
                 </section>

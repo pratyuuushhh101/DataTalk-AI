@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="DataTalk AI Demo Panel — Interactive control panel for demonstrating backend billing, reorder, and demand tracking features.">
+    <title>DataTalk AI — Demo Panel</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+    <!-- Header -->
+    <header class="header">
+        <h1>DataTalk AI Demo Panel</h1>
+        <p>Interactive control panel for backend demo flows</p>
+        <div class="status-badge">
+            <span class="dot"></span>
+            Backend: localhost:5000
+        </div>
+    </header>
+
+    <!-- Main Grid -->
+    <main class="container">
+
+        <!-- Demo Controls -->
+        <section class="card">
+            <div class="card-title">
+                <span class="icon">🎯</span>
+                Demo Controls
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-founder" id="btn-founder">
+                    <span class="emoji">🚀</span>
+                    <div>
+                        <div class="label">Founder Kit Generator</div>
+                        <div class="status-text">AI-led shop setup strategy (₹10K / ₹25K)</div>
+                    </div>
+                </button>
+
+                <button class="btn btn-billing" id="btn-billing">
+                    <span class="emoji">🧾</span>
+                    <div>
+                        <div class="label">Run Billing</div>
+                        <div class="status-text">Maggi ×2 + Lays ×2 → basket + reorder</div>
+                    </div>
+                </button>
+
+                <button class="btn btn-lowstock" id="btn-lowstock">
+                    <span class="emoji">📉</span>
+                    <div>
+                        <div class="label">Trigger Low Stock</div>
+                        <div class="status-text">Force reorder check on Maggi</div>
+                    </div>
+                </button>
+
+                <button class="btn btn-demand" id="btn-demand">
+                    <span class="emoji">🔥</span>
+                    <div>
+                        <div class="label">Simulate Missed Demand</div>
+                        <div class="status-text">5× Coke requests → threshold breach</div>
+                    </div>
+                </button>
+            </div>
+        </section>
+
+        <!-- Insights + Camera -->
+        <section class="card">
+            <div class="card-title">
+                <span class="icon">📊</span>
+                Analytics & Vision
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-insights" id="btn-insights">
+                    <span class="emoji">📈</span>
+                    <div>
+                        <div class="label">Fetch Demand Insights</div>
+                        <div class="status-text">Top demanded products from Redis</div>
+                    </div>
+                </button>
+
+                <button class="btn btn-camera" id="btn-camera">
+                    <span class="emoji">📷</span>
+                    <div>
+                        <div class="label">Start Camera</div>
+                        <div class="status-text">Simulated product detection</div>
+                    </div>
+                </button>
+            </div>
+        </section>
+
+        <!-- Webcam Section -->
+        <section class="card webcam-card">
+            <div class="card-title">
+                <span class="icon">👁️</span>
+                Product Vision (Demo)
+            </div>
+            <div class="webcam-container">
+                <div class="webcam-feed">
+                    <video id="webcam-video" autoplay playsinline muted></video>
+                    <div class="placeholder" id="webcam-placeholder">
+                        <span class="cam-icon">📷</span>
+                        Click "Start Camera" to begin
+                    </div>
+                </div>
+                <div class="detection-result">
+                    <h4>Detected Products</h4>
+                    <div id="detection-items">
+                        <div style="color: var(--text-muted); font-size: 0.82rem; text-align: center;">
+                            Start camera to see detections
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Output Panel -->
+        <section class="card output-card">
+            <div class="output-header">
+                <div class="card-title" style="margin-bottom: 0;">
+                    <span class="icon">💬</span>
+                    API Response
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span id="output-label" class="endpoint-tag">Ready</span>
+                    <button class="output-clear" id="btn-clear">Clear</button>
+                </div>
+            </div>
+            <div class="output-body" id="output-body">
+                <div class="empty-state">Click a button above to see the response</div>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import Dashboard from './pages/Dashboard';
+import MatchingDashboard from './pages/MatchingDashboard';
 import DataLedgerPage from './pages/DataLedgerPage';
 import QuickReportsPage from './pages/QuickReportsPage';
 import ProfitAnalysisPage from './pages/ProfitAnalysisPage';
 import LandingPage from './pages/LandingPage';
 import UnderConstruction from './pages/UnderConstruction';
 import WhatsAppChatbotPage from './pages/WhatsAppChatbotPage';
+import FounderKit from './pages/FounderKit';
 import Layout from './components/Layout';
 
 // Shared page transition configuration
@@ -76,6 +78,22 @@ const AnimatedRoutes = () => {
           <motion.div {...pageTransition} className="h-full">
             <Layout>
               <WhatsAppChatbotPage />
+            </Layout>
+          </motion.div>
+        } />
+
+        <Route path="/sync" element={
+          <motion.div {...pageTransition} className="h-full">
+            <Layout>
+              <MatchingDashboard />
+            </Layout>
+          </motion.div>
+        } />
+
+        <Route path="/founder" element={
+          <motion.div {...pageTransition} className="h-full">
+            <Layout>
+              <FounderKit />
             </Layout>
           </motion.div>
         } />

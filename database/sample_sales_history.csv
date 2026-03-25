@@ -1,0 +1,10 @@
+transaction_date,product,category,quantity,unit_cost,unit_price,region
+2026-02-20,Parle-G,Snacks,50,4,5,North
+2026-02-21,Maggi,Snacks,100,10,14,North
+2026-02-22,Aashirvaad Atta 5kg,Grains,20,180,220,North
+2026-02-23,Fortune Sunflower Oil 1L,Oils,30,110,140,North
+2026-02-24,Amul Milk 1L,Dairy,50,55,65,North
+2026-02-25,Tata Salt 1kg,Essentials,40,15,25,North
+2026-02-26,Red Label Tea 250g,Beverages,25,90,120,North
+2026-02-27,Parle-G,Snacks,20,4,5,North
+2026-02-28,Amul Milk 1L,Dairy,60,55,65,North
