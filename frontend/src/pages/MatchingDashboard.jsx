@@ -189,11 +189,21 @@ const MatchingDashboard = () => {
             return; // Abort if camera fails
         }
 
-        // 3. Start mic
         try {
             const recognizer = startTranscription(async (text, isFinal) => {
+                console.log(`[FRONTEND-PIPELINE] 🎤 Speech event received: "${text}" (isFinal: ${isFinal})`);
+
                 // ── Pipeline guard: ignore if session stopped ──
-                if (!sessionActiveRef.current) return;
+                if (!sessionActiveRef.current) {
+                    console.log("[FRONTEND-PIPELINE] ⚠️ Dropped transcript because sessionActiveRef is false");
+                    return;
+                }
+
+                // ── Guard: Ignore completely empty text (e.g. 15s silence timeouts) ──
+                if (!text || text.trim() === "") {
+                    console.warn("[FRONTEND-PIPELINE] ⚠️ Dropped empty transcript (Common during mic silence).");
+                    return;
+                }
 
                 setLiveTranscript(text);
                 if (!isFinal) return;
@@ -204,6 +214,7 @@ const MatchingDashboard = () => {
                 if (isTotal) {
                     setStatus("Processing...");
                     setPipelineLog(prev => [...prev, "⚡ 'Total' → pipeline firing..."]);
+                    console.log(`[FRONTEND-PIPELINE] 🎯 "Total" keyword matched! Assembling payload...`);
                 }
 
                 // Build payload — attach frame or IP URL on "total"
@@ -213,24 +224,39 @@ const MatchingDashboard = () => {
                     if (frameData.image) {
                         payload.image = frameData.image;
                         setPipelineLog(prev => [...prev, "📸 Local frame captured"]);
+                        console.log(`[FRONTEND-PIPELINE] 📸 Appended local frame to payload (${Math.round(frameData.image.length / 1024)}KB)`);
                     } else if (frameData.ipCameraUrl) {
                         payload.ipCameraUrl = frameData.ipCameraUrl;
                         setPipelineLog(prev => [...prev, "🌐 Routed Network snapshot trigger"]);
+                        console.log(`[FRONTEND-PIPELINE] 🌐 Appended IP Camera URL to payload.`);
                     } else {
                         setPipelineLog(prev => [...prev, "⚠️ Frame capture failed"]);
+                        console.log(`[FRONTEND-PIPELINE] ⚠️ Both local and IP frame capture returned null.`);
                     }
                 }
 
-                const res = await fetch(`${SYNC_BACKEND}/voice-orchestrator`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const data = await res.json();
+                console.log(`[FRONTEND-PIPELINE] 🚀 Dispatching POST to ${SYNC_BACKEND}/voice-orchestrator`);
+                try {
+                    const res = await fetch(`${SYNC_BACKEND}/voice-orchestrator`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
 
-                // ── Handle responses ──
-                handlePipelineResponse(data);
-                fetchSession();
+                    if (!res.ok) {
+                        console.error(`[FRONTEND-PIPELINE] ❌ Backend returned HTTP ${res.status}`);
+                    }
+
+                    const data = await res.json();
+                    console.log(`[FRONTEND-PIPELINE] 📥 Backend responded:`, data);
+
+                    // ── Handle responses ──
+                    handlePipelineResponse(data);
+                    fetchSession();
+                } catch (err) {
+                    console.error("[FRONTEND-PIPELINE] ❌ Fetch Error:", err);
+                    setPipelineLog(prev => [...prev, "❌ Network Error communicating with backend"]);
+                }
             });
             recognizerRef.current = recognizer;
             setPipelineLog(prev => [...prev, "🎤 Microphone active"]);
@@ -291,6 +317,8 @@ const MatchingDashboard = () => {
 
     // ── Handle all pipeline responses in one place ──
     const handlePipelineResponse = (data) => {
+        console.log(`[PIPELINE] Handling response payload:`, data);
+
         if (data.type === "ai_response") {
             // Anti-spam: prevent duplicate messages within 3s
             setAiResponses(prev => {
@@ -330,7 +358,7 @@ const MatchingDashboard = () => {
 
         } else if (data.status === "no_items") {
             setStatus("No Items");
-            setPipelineLog(prev => [...prev, "⛔ No items detected. Reposition products."]);
+            setPipelineLog(prev => [...prev, "⛔ No CV items detected. Retrying..."]);
 
         } else if (data.status === "no_image") {
             setStatus("No Camera");
@@ -339,7 +367,7 @@ const MatchingDashboard = () => {
         } else if (data.status === "accumulating") {
             setStatus("Active");
             const items = data.parsed?.items ? Object.entries(data.parsed.items).map(([k, v]) => `${k} x${v}`).join(", ") : "none";
-            setPipelineLog(prev => [...prev, `📝 ${items}`]);
+            setPipelineLog(prev => [...prev, `📝 Intent Logged: ${data.message}`]);
 
         } else if (data.status === "reset_done") {
             setSession(data.session || { cv_items: {}, audio_items: {}, audio_total: null, expected_total: null, alerts: [] });
@@ -348,6 +376,16 @@ const MatchingDashboard = () => {
             setAlerts([]);
             setPipelineLog(prev => [...prev, "🔄 Reset. Ready for next."]);
             setLiveTranscript("");
+
+        } else if (data.status === "busy") {
+            console.warn("[PIPELINE] Backend is busy.");
+            setPipelineLog(prev => [...prev, "⚠️ Backend Busy: Processing previous command."]);
+
+        } else if (data.error) {
+            console.error("[PIPELINE] Backend Error:", data.error);
+            setPipelineLog(prev => [...prev, `❌ Error: ${data.error}`]);
+        } else {
+            console.warn("[PIPELINE] Unhandled Event Response:", data);
         }
     };
 
