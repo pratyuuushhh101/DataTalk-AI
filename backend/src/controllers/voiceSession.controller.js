@@ -32,18 +32,33 @@ async function handleAnalyticsQuery(question) {
 }
 
 export const handleVoiceCommand = async (req, res) => {
+    console.log("[BACKEND-PIPELINE] 🚨 Request received at /voice-orchestrator");
+    console.log(`[BACKEND-PIPELINE] Current Guard State: processing=${processing}`);
+
     // ── Session Guard ──
     if (processing) {
+        console.warn("[BACKEND-PIPELINE] ⚠️ REJECTED: System is busy processing a previous command.");
         return res.json({ status: "busy", message: "Processing previous command." });
     }
 
-    const { transcript, image } = req.body;
-    if (!transcript) return res.status(400).json({ error: "Transcript required." });
+    const { transcript, image, ipCameraUrl } = req.body;
+
+    // Log EXACTLY what the frontend sent
+    console.log(`[BACKEND-PIPELINE] Payload Check:`);
+    console.log(`  - Transcript: ${transcript ? `"${transcript}"` : "❌ MISSING"}`);
+    console.log(`  - Image: ${image ? "✅ Present (Base64)" : "❌ MISSING"}`);
+    console.log(`  - IP Camera: ${ipCameraUrl ? "✅ Present" : "❌ MISSING"}`);
+
+    if (!transcript) {
+        console.warn("[BACKEND-PIPELINE] ❌ REJECTED: No transcript provided.");
+        return res.status(400).json({ error: "Transcript required." });
+    }
 
     processing = true;
 
     try {
         console.log(`\n[VOICE] Transcript: "${transcript}"`);
+        console.log(`[BACKEND-PIPELINE] Sending to AI-Core for intent extraction...`);
 
         // 1. Send to AI Core for Intent Classification
         const extractRes = await axios.post("http://localhost:8000/extract", { message: transcript });
