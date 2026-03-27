@@ -1,0 +1,92 @@
+# DataTalk AI - Project Architecture Overview
+
+This document provides a comprehensive breakdown of the DataTalk AI project structure. The repository is organized into distinct full-stack modules separated by functionality. 
+
+---
+
+## 1. /frontend (React + Vite Web Application)
+The frontend is a robust SPA (Single Page Application) dashboard delivering real-time insights, natural language querying interfaces, and visual analytics to shop owners.
+
+- `index.html`: The main HTML template where the React app is injected.
+- `package.json` / `vite.config.js`: Project dependencies and Vite build configuration for bundling the React app.
+- `src/App.jsx` & `main.jsx`: Application entry points handling routing and context initialization.
+- `src/index.css`: Global styles and Tailwind UI configurations.
+- `src/components/`: Reusable, modular UI elements.
+  - `AIResponseCard.jsx`, `InsightSummary.jsx`: UI to render AI-driven insights and tips based on data.
+  - `ChartSection.jsx`: Wrapper for displaying dynamic charts (sales over time, top products).
+  - `KpiCards.jsx`: Dashboard cards highlighting key metrics (Gross Sales, Profit, etc.).
+  - `Layout.jsx`, `Navbar.jsx`, `Sidebar.jsx`: Structural components for the overall dashboard frame and navigation.
+  - `QuerySection.jsx`, `QueryHistory.jsx`: The interface where users type natural language queries and view their past queries.
+  - `RawDataTable.jsx`, `SqlPreview.jsx`: Data grids showing raw MSME interaction data and the generated SQL corresponding to NLP queries.
+  - `UploadSection.jsx`: Drag-and-drop component to allow uploading inventory/sales sheets for direct analysis.
+- `src/pages/`: Main route views mapping to UI URLs.
+  - `Dashboard.jsx`: The default landing metrics view.
+  - `LandingPage.jsx`: The external-facing promotional entry point for the app.
+  - `DataLedgerPage.jsx`: Displays raw records of uploaded transaction datasets.
+  - `ProfitAnalysisPage.jsx`, `QuickReportsPage.jsx`: Specialized data analysis reporting screens.
+  - `FounderKit.jsx`, `MatchingDashboard.jsx`: Specialized tools specific to the DataTalk platform logic.
+  - `WhatsAppChatbotPage.jsx`: Configuration and preview interface for the WhatsApp bot connection.
+- `src/services/api.js` & `speech.service.js`: Axios-based functions to connect the frontend to the `backend` and `ai-core` modules.
+
+---
+
+## 2. /backend (Main Node.js / Express Server)
+The central backend routes frontend requests, holds the core business logic, orchestrates data, connects to the database, and processes core app functionality.
+
+- `server.js` (in `src/`): Bootstraps the Express application and wires all routing and middleware.
+- `.env.example`: Template for environment variables (DB URLs, API keys).
+- `package.json`: Backend library dependencies.
+- `src/config/`: Setup for data pipelines mapping to `db.js` (relational database logic) and `redis.js` (in-memory caching).
+- `src/controllers/`: Receives HTTP requests, calls services, and handles responses.
+  - `analyze.controller.js`: Triggers analysis and data aggregation for frontend reports.
+  - `nlQuery.controller.js`, `query.controller.js`: Takes natural language input, communicates with AI models for SQL conversion, and returns executed data.
+  - `transaction.controller.js`: CRUD logic surrounding POS or manual transactions.
+  - `upload.controller.js`: Processes CSV/file uploads parsing them into data storage.
+  - `voiceSession.controller.js`, `whatsapp.controller.js`: Endpoints exposed for WhatsApp and voice bot webhook integrations.
+- `src/middleware/`: Security and validation pipelines running before controllers.
+  - `nlQueryValidation.middleware.js`, `sqlValidation.middleware.js`: Sanitizes and validates SQL queries to prevent destructive (`DROP`, `DELETE`) SQL injections.
+- `src/routes/`: REST definitions mapping endpoint URLs (`/api/...`) to their distinct `controllers`.
+- `src/services/`: Reusable pure business-logic modules orchestrated by controllers.
+  - `decision.service.js`: Processes input to determine actions (like Reordering, Restock alerts, and Billing inconsistencies) using weighted priorities.
+  - `basket.service.js`, `inventory.service.js`, `sales.service.js`, `transaction.service.js`: Managers for manipulating standard CRM/ERP data concepts.
+  - `blob.service.js`, `cv.service.js`: Logic wrapping computer vision tasks or blob-handling (e.g. handwritten ledger OCR logic).
+- `src/jobs/cron.js`: Scheduled background jobs for periodic cleanup or sync tasks.
+- `src/utils/normalization.js`: Helps conform disparate data inputs into standard formats.
+- `demo-panel/`: Contains temporary vanilla `index.html`, `script.js`, `styles.css` UI files used to debug webhook/bot flows independently from the React frontend.
+
+---
+
+## 3. /ai-core (Dedicated AI Processing Microservice)
+This folder acts as an isolated microservice (Node.js) primarily scaling and separating out heavy language/audio AI loads from the core transactional backend.
+
+- `server.js`: Stands up the AI execution microservice.
+- `package.json`: Keeps AI dependencies specific to speech processing (Whisper API libraries) and LLM wrappers isolated.
+- `src/controllers/`, `src/routes/`, `src/services/`: 
+  - `aiController.js` / `aiService.js`: Routes text out to external large language models to construct Insights or translate NL-to-SQL.
+  - `speechController.js` / `speechService.js`: Handlers converting voice/audio recordings into transcriptions or mapping transcriptions back to structured data.
+- `src/prompts/`: 
+  - `insightPrompt.js`, `sqlPrompt.js`: Engineered prompt templates containing schema references forcing LLMs to return consistent JSON or secure SQL layouts.
+- `result1.json` - `result5.json`: Artifact/test dumps used to verify and snapshot the outputs of various LLM calls.
+
+---
+
+## 4. /database
+Holds foundational storage schemas and mock data for immediate developer bootstrapping and tests.
+
+- `database_seeder.sql`: Table structure and initial data to instantly restore the DB to a working state.
+- `sample_sales_history.csv`: A realistic data sheet enabling developers to test the `/frontend` CSV uploader module immediately.
+
+---
+
+## 5. /archive
+Acts as a repository for phased-out or alternate experimental code iterations.
+
+- `Backend_final/` & `Backend_sync/`: Legacy, monolithic versions of the backend retained for fallback purposes, backwards compatibility references, or migration bridging during big architectural overhauls.
+
+---
+
+## 6. /docs
+Contains documentation supporting the development team. 
+
+- `fixes.md`: A log tracking resolved bugs, troubleshooting steps, and architectural band-aids.
+- `README.md` (root): Quickstart and overarching philosophy guiding the implementation workflow.
