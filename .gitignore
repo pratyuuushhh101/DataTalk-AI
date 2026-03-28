@@ -47,3 +47,5 @@ coverage/
 
 # ── Archive lock files ──────────────────────────────────────────────────────────
 archive/**/package-lock.json
+
+out*.txt

@@ -33,72 +33,132 @@ function convertToWav(inputPath) {
   });
 }
 
+const { classifyIntent } = require("./intent.service.js");
+const axios = require("axios");
+
+let edgeMemoryWindow = [];
+
 async function transcribeAudio(filePath) {
   let wavPath = null;
+  const collectedTranscripts = [];
 
   try {
-    // 1. Convert uploaded file (webm/ogg/etc.) to WAV
     wavPath = await convertToWav(filePath);
 
     return await new Promise((resolve, reject) => {
-      // 2. Setup Translation Config
-      const translationConfig = sdk.SpeechTranslationConfig.fromSubscription(
-        process.env.AZURE_SPEECH_KEY,
-        process.env.AZURE_SPEECH_REGION
-      );
+      if (!process.env.AZURE_SPEECH_KEY || !process.env.AZURE_SPEECH_REGION) {
+         console.warn("[WARNING] No Azure keys. Stream initializing anyway to fail fast.");
+      }
 
-      // Target language is English
+      const translationConfig = sdk.SpeechTranslationConfig.fromSubscription(
+        process.env.AZURE_SPEECH_KEY || "dummy",
+        process.env.AZURE_SPEECH_REGION || "dummy"
+      );
       translationConfig.addTargetLanguage("en-US");
 
-      // 3. Setup Auto-Detect for Source Language (Major Indian Languages)
       const autoDetectSourceLanguageConfig = sdk.AutoDetectSourceLanguageConfig.fromLanguages([
-        "en-IN", // English (India)
-        "hi-IN", // Hindi
-        "kn-IN", // Kannada
-        "bn-IN"  // Bengali
+        "en-IN", "hi-IN", "kn-IN", "bn-IN"
       ]);
 
-      // 4. Read the converted WAV file via push stream with correct format
       const format = sdk.AudioStreamFormat.getWaveFormatPCM(16000, 16, 1);
       const pushStream = sdk.AudioInputStream.createPushStream(format);
 
       const audioBuffer = fs.readFileSync(wavPath);
-      // Skip the 44-byte WAV header so we push only raw PCM data
       const pcmData = audioBuffer.slice(44);
       pushStream.write(pcmData);
       pushStream.close();
 
       const audioConfig = sdk.AudioConfig.fromStreamInput(pushStream);
-
-      // 5. Create Translation Recognizer
       const recognizer = sdk.TranslationRecognizer.FromConfig(
         translationConfig,
         autoDetectSourceLanguageConfig,
         audioConfig
       );
 
-      recognizer.recognizeOnceAsync(result => {
-        recognizer.close();
+      // PARTIAL TRANSCRIPT HANDLING
+      recognizer.recognizing = (s, e) => {
+          if (e.result.reason === sdk.ResultReason.TranslatingSpeech || e.result.reason === sdk.ResultReason.RecognizingSpeech) {
+             const partialText = e.result.translations ? (e.result.translations.get("en-US") || e.result.text) : e.result.text;
+             if (partialText) {
+                 console.log(`[PARTIAL] ${partialText}`);
+             }
+          }
+      };
 
-        if (result.reason === sdk.ResultReason.TranslatedSpeech) {
-          // Retrieve the english translation
-          const englishTranslation = result.translations.get("en-US") || result.text;
-          console.log("[Speech] Translated:", englishTranslation);
-          resolve(englishTranslation);
-        } else if (result.reason === sdk.ResultReason.RecognizedSpeech) {
-          // Fallback to recognized text if translation didn't trigger
-          console.log("[Speech] Recognized (no translation):", result.text);
-          resolve(result.text);
-        } else {
-          console.error("[Speech] Recognition failed:", result.errorDetails);
-          reject(result.errorDetails || "Translation Failed or Audio empty");
-        }
-      });
+      // FINAL TRANSCRIPT HANDLING
+      recognizer.recognized = (s, e) => {
+          if (e.result.reason === sdk.ResultReason.TranslatedSpeech || e.result.reason === sdk.ResultReason.RecognizedSpeech) {
+             const finalText = e.result.translations ? (e.result.translations.get("en-US") || e.result.text) : e.result.text;
+             if (!finalText) return;
+
+             console.log(`[FINAL] ${finalText}`);
+
+             // 1. Noise Filter: Drop if < 3 meaningful words
+             const wordCount = finalText.trim().split(/\\s+/).length;
+             if (wordCount < 3) {
+                 console.log(`[DROPPED] Transcript too short (< 3 words)`);
+                 return;
+             }
+
+             // 2. Semantic Edge Parsing
+             const { intent, confidence, entities } = classifyIntent(finalText);
+             console.log(`[INTENT] ${intent} | ${JSON.stringify(entities)}`);
+
+             // 3. Drop UNKNOWN structurally
+             if (intent === "UNKNOWN") {
+                 console.log(`[DROPPED] Edge Filter: UNKNOWN Intent.`);
+                 return;
+             }
+
+             // 4. 7-Second Rolling Dedup Memory Cache
+             const now = Date.now();
+             edgeMemoryWindow = edgeMemoryWindow.filter(ev => (now - ev.timestamp) <= 7000);
+
+             const isSemanticDup = edgeMemoryWindow.some(ev => 
+                 ev.intent === intent && JSON.stringify(ev.entities) === JSON.stringify(entities)
+             );
+
+             if (isSemanticDup) {
+                 console.log(`[DROPPED] Edge Filter: 7s Semantic Duplicate recognized.`);
+                 return;
+             }
+
+             edgeMemoryWindow.push({ timestamp: now, intent, entities });
+
+             // 5. Fire successfully filtered SPEECH_EVENT down the pipeline
+             const event = {
+                 eventId: `speech_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                 timestamp: Date.now(),
+                 type: "SPEECH",
+                 text: finalText,
+                 speaker: "unknown" // rely entirely on intent fallback mechanics
+             };
+
+             axios.post('http://localhost:8000/event', event).catch(err => {
+                 console.error("[STREAM ERROR] Failed to hit 8000/event:", err.message);
+             });
+             
+             collectedTranscripts.push(finalText);
+          }
+      };
+
+      recognizer.canceled = (s, e) => {
+          console.log(`[STREAM END] Canceled: ${e.reason}`);
+          recognizer.stopContinuousRecognitionAsync();
+          resolve(collectedTranscripts.join(" "));
+      };
+
+      recognizer.sessionStopped = (s, e) => {
+          console.log(`[STREAM END] Session stopped.`);
+          recognizer.stopContinuousRecognitionAsync();
+          resolve(collectedTranscripts.join(" "));
+      };
+
+      recognizer.startContinuousRecognitionAsync();
     });
   } finally {
-    // Clean up the converted WAV file
     if (wavPath && fs.existsSync(wavPath)) {
-      try { fs.unlinkSync(wavPath); } catch (_) { /* ignore cleanup errors */ }
+      try { fs.unlinkSync(wavPath); } catch (_) {}
     }
   }
 }
