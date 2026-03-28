@@ -3,6 +3,38 @@ import axios from 'axios';
 import { getPool } from '../config/db.js';
 import { sendWhatsApp } from '../services/notification.service.js';
 
+import { getRecommendations } from "../services/recommendation.service.js";
+import * as inventoryService from "../services/inventory.service.js";
+import * as transactionService from "../services/transaction.service.js";
+import * as salesService from "../services/sales.service.js";
+
+import { getUpcomingFestival } from "../services/calendar.service.js";
+
+async function runRecommendationEngine() {
+    try {
+        const inventory = typeof inventoryService.getAll === 'function' ? await inventoryService.getAll().catch(()=>[]) : [];
+        const salesData = typeof transactionService.getAll === 'function' ? await transactionService.getAll().catch(()=>[]) : [];
+        const globalSalesData = typeof salesService.getAggregatedData === 'function' ? await salesService.getAggregatedData().catch(()=>[]) : [];
+
+        const region = inventory?.[0]?.region || "India";
+        const festivalData = await getUpcomingFestival();
+        const festival = festivalData ? festivalData.name : null;
+
+        const recommendations = await getRecommendations({
+            inventory,
+            salesData,
+            globalSalesData,
+            region,
+            festival
+        });
+
+        console.log("Auto Recommendation Generated:", JSON.stringify(recommendations, null, 2));
+
+    } catch (err) {
+        console.error("Recommendation Engine Error:", err.message);
+    }
+}
+
 
 export const startCronJobs = () => {
     console.log("[Cron] Booting up Proactive Azure Watchdogs...");
@@ -98,4 +130,10 @@ export const startCronJobs = () => {
             console.error("[Cron] Schemes Matcher Error:", err.message);
         }
     });
+
+    // ── Ambient Recommendation Engine ──────────────────────────────────────────
+    cron.schedule("0 */6 * * *", runRecommendationEngine);
+
+    // FOR TESTING:
+    cron.schedule("* * * * *", runRecommendationEngine);
 };
