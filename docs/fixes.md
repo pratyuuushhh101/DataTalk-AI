@@ -33,3 +33,11 @@ how will it be scalable? for real world
 
 how ai is helping in our proj
 quick commerce 
+
+can do a trigger for "good morning" so system knows new customer is here
+
+in the piplein log, make ht convo stay there andnot vanish
+
+remove ai voice assistant compleetely.
+
+pre trained models for voice like google

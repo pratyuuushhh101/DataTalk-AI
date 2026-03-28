@@ -49,3 +49,6 @@ coverage/
 archive/**/package-lock.json
 
 out*.txt
+__pycache__/
+*.pyc
+venv/

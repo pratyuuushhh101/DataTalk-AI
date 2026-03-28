@@ -192,20 +192,21 @@ export async function processTransaction(transcript, imageBase64 = null) {
         // ══════════════════════════════════════════════════════════════
         // STEP 5: Total Comparison (NUMBERS ONLY, with tolerance)
         // ══════════════════════════════════════════════════════════════
-        const statedTotal = audioTotal !== null ? Number(audioTotal) : Number(getSession().audio_total || 0);
+        const statedTotal = Number(audioTotal !== null ? audioTotal : (getSession().audio_total || 0));
+        const coercedExpected = Number(expectedTotal);
         setAudioTotal(statedTotal);
 
-        const diff = Math.abs(expectedTotal - statedTotal);
+        const diff = Math.abs(coercedExpected - statedTotal);
         const totalMatch = diff <= TOLERANCE;
-        const itemsMatch = missingItems.length === 0 && qtyMismatches.length === 0;
 
         console.log(`[COMPARE] ────────────────────────────`);
-        console.log(`[COMPARE] expected: ${expectedTotal} (type: ${typeof expectedTotal})`);
+        console.log(`[COMPARE] expected: ${coercedExpected} (type: ${typeof coercedExpected})`);
         console.log(`[COMPARE] audio:    ${statedTotal} (type: ${typeof statedTotal})`);
         console.log(`[COMPARE] diff:     ${diff.toFixed(2)}`);
         console.log(`[COMPARE] tolerance:${TOLERANCE}`);
 
-        // Only flag mismatch if we have real data from BOTH sides
+        // ── DEMO PRIORITY LOGIC ──
+        // If totals match, it's a success, regardless of item breakdown.
         let overallStatus;
         const cvHasItems = Object.keys(normalizedCV).length > 0;
         const audioHasTotal = audioTotal !== null && !isNaN(statedTotal);
@@ -216,13 +217,21 @@ export async function processTransaction(transcript, imageBase64 = null) {
         } else if (!audioHasTotal) {
             overallStatus = "partial";
             console.log(`[COMPARE] result:   PARTIAL (no audio total)`);
-        } else if (totalMatch && itemsMatch) {
+        } else if (totalMatch) {
             overallStatus = "ok";
-            console.log(`[COMPARE] result:   ✅ MATCH`);
+            console.log(`[COMPARE] result:   ✅ MATCH (Totals Aligned)`);
         } else {
             overallStatus = "mismatch";
-            console.log(`[COMPARE] result:   ❌ MISMATCH`);
+            console.log(`[COMPARE] result:   ❌ MISMATCH (Value Discrepancy)`);
         }
+
+        console.log("[FINAL DECISION]", {
+            expectedTotal: coercedExpected,
+            audioTotal: statedTotal,
+            diff,
+            tolerance: TOLERANCE,
+            result: overallStatus
+        });
         console.log(`[COMPARE] ────────────────────────────`);
 
         if (overallStatus === "mismatch") {

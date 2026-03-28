@@ -3,19 +3,50 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Camera, Mic, ShieldCheck, Zap, RefreshCw,
     CheckCircle2, AlertCircle, X, Power,
-    Flame, MicOff
+    Flame, MicOff, MessageSquare
 } from 'lucide-react';
 import { startTranscription, stopTranscription } from '../services/speech.service';
+import { DiarizationClient } from '../services/diarization.service';
 import { AIResponseCard } from '../components/AIResponseCard';
 
 const SYNC_BACKEND = "http://localhost:5000/demo";
+
+// ── Role Label Formatter ────────────────────────────────────────────────────
+function SpeakerBadge({ role, displayConfidence, className = "" }) {
+    if (role === "owner") {
+        return (
+            <div className={`flex items-center gap-1.5 font-bold uppercase tracking-widest text-[#10b981] ${className}`}>
+                <span className="text-sm">🧑‍💼</span> Owner
+                {displayConfidence !== null && (
+                    <span className="ml-1 text-emerald-500/60 font-medium normal-case">({displayConfidence}%)</span>
+                )}
+            </div>
+        );
+    }
+
+    // Default everything else to Customer (no percentages)
+    return (
+        <div className={`flex items-center gap-1.5 font-bold uppercase tracking-widest text-orange-400 ${className}`}>
+            <span className="text-sm">👤</span> Customer
+        </div>
+    );
+}
+
+function getRoleColor(role) {
+    switch (role) {
+        case "owner": return "text-emerald-400";
+        case "customer": return "text-orange-400";
+        case "uncertain": return "text-yellow-500";
+        default: return "text-gray-400";
+    }
+}
 
 const MatchingDashboard = () => {
     // ══════════════════════════════════════════════════════════════
     // SINGLE SESSION STATE — controls mic + camera + pipeline
     // ══════════════════════════════════════════════════════════════
     const [isSessionActive, setIsSessionActive] = useState(false);
-    const [aiResponses, setAiResponses] = useState([]); // Array of stacked AI responses
+    const [aiResponses, setAiResponses] = useState([]);
 
     const [session, setSession] = useState({
         cv_items: {},
@@ -28,7 +59,11 @@ const MatchingDashboard = () => {
     const [comparison, setComparison] = useState(null);
     const [alerts, setAlerts] = useState([]);
     const [liveTranscript, setLiveTranscript] = useState("");
-    const [pipelineLog, setPipelineLog] = useState([]);
+
+    // ── DUAL LOG SYSTEM ─────────────────────────────────────────────────────
+    const [conversationLog, setConversationLog] = useState([]);
+    const [actionLog, setActionLog] = useState([]);
+    const [activeLogTab, setActiveLogTab] = useState("conversation"); // "conversation" | "action"
 
     // ── Camera Selection State ──
     const [videoDevices, setVideoDevices] = useState([]);
@@ -36,33 +71,69 @@ const MatchingDashboard = () => {
     const [ipCameraUrl, setIpCameraUrl] = useState(localStorage.getItem('ipCameraUrl') || "http://192.168.1.100:8080");
 
     const videoRef = useRef(null);
+    const lastFrameRef = useRef(null);
     const recognizerRef = useRef(null);
-    const sessionActiveRef = useRef(false); // Ref for async callbacks
+    const diarizationClientRef = useRef(null);
+    const sessionActiveRef = useRef(false);
+    const conversationEndRef = useRef(null);
+    const actionEndRef = useRef(null);
 
-    // Keep ref in sync with state
     useEffect(() => {
         sessionActiveRef.current = isSessionActive;
     }, [isSessionActive]);
 
+    // Auto-scroll logs
+    useEffect(() => {
+        if (activeLogTab === "conversation") {
+            conversationEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        } else {
+            actionEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }
+    }, [conversationLog, actionLog, activeLogTab]);
+
+    // ── Centralized Event Emitter ───────────────────────────────────────────
+    const emitEvent = useCallback((event) => {
+        if (event.type === "speech") {
+            if (!event.text || event.text.trim() === "") return; // NEVER log empty speech
+            setConversationLog(prev => [...prev, {
+                role: event.role || "unknown",
+                text: event.text,
+                speakerId: event.speakerId || null,
+                confidence: event.confidence || 0,
+                displayConfidence: event.displayConfidence || null,
+                timestamp: Date.now()
+            }]);
+        } else {
+            // System / action event
+            setActionLog(prev => [...prev, {
+                message: event.message,
+                level: event.level || "info", // info, warn, error, success
+                timestamp: Date.now()
+            }]);
+        }
+    }, []);
+
     // ── Capture frame (only if session active) ──
     const captureFrame = useCallback(() => {
-        if (!sessionActiveRef.current) return { image: null, ipCameraUrl: null };
+        if (!sessionActiveRef.current) {
+            return { image: lastFrameRef.current, ipCameraUrl: selectedDeviceId === "IP_CAMERA" ? ipCameraUrl : null };
+        }
 
-        // Handle IP Camera Frame Capture (Passed to backend)
         if (selectedDeviceId === "IP_CAMERA") {
             return { image: null, ipCameraUrl };
         }
 
-        // Handle Local Video Frame Capture
-        if (!videoRef.current) return { image: null, ipCameraUrl: null };
+        if (!videoRef.current) return { image: lastFrameRef.current, ipCameraUrl: null };
         const canvas = document.createElement("canvas");
         canvas.width = videoRef.current.videoWidth;
         canvas.height = videoRef.current.videoHeight;
-        if (canvas.width === 0 || canvas.height === 0) return { image: null, ipCameraUrl: null };
+        if (canvas.width === 0 || canvas.height === 0) return { image: lastFrameRef.current, ipCameraUrl: null };
 
         const ctx = canvas.getContext("2d");
         ctx.drawImage(videoRef.current, 0, 0);
-        return { image: canvas.toDataURL("image/jpeg", 0.7), ipCameraUrl: null };
+        const b64 = canvas.toDataURL("image/jpeg", 0.7);
+        lastFrameRef.current = b64; // Store for fallback
+        return { image: b64, ipCameraUrl: null };
     }, [selectedDeviceId, ipCameraUrl]);
 
     // ── Lightweight session polling ──
@@ -90,20 +161,14 @@ const MatchingDashboard = () => {
     useEffect(() => {
         async function getCameras() {
             try {
-                // Request initial permission to get labels
                 const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
                 const devices = await navigator.mediaDevices.enumerateDevices();
-                tempStream.getTracks().forEach(t => t.stop()); // Stop the temp stream
+                tempStream.getTracks().forEach(t => t.stop());
 
                 const videoInputs = devices.filter(d => d.kind === 'videoinput');
-
-                // Inject Network Camera option
                 videoInputs.push({ deviceId: "IP_CAMERA", label: "🌐 Network IP Camera" });
 
                 setVideoDevices(videoInputs);
-                console.log("[CAM] Available devices:", videoInputs.map(v => v.label).join(", "));
-
-                // If no selected device and there are cameras, auto select the first
                 if (!selectedDeviceId && videoInputs.length > 0) {
                     const firstId = videoInputs[0].deviceId;
                     setSelectedDeviceId(firstId);
@@ -116,196 +181,207 @@ const MatchingDashboard = () => {
         getCameras();
     }, []);
 
-    // Hot-swap camera if session is running
     const handleCameraChange = async (e) => {
         const newDeviceId = e.target.value;
         setSelectedDeviceId(newDeviceId);
         localStorage.setItem('preferredCamera', newDeviceId);
-        console.log(`[CAM] Selected: ${videoDevices.find(d => d.deviceId === newDeviceId)?.label || newDeviceId}`);
 
         if (isSessionActive) {
             stopCamera();
             if (newDeviceId === "IP_CAMERA") {
-                setPipelineLog(prev => [...prev, "🌐 Swapped to IP Camera Network Feed"]);
+                emitEvent({ type: "system", message: "Swapped to IP Camera Network Feed", level: "info" });
             } else {
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({
                         video: newDeviceId ? { deviceId: { exact: newDeviceId } } : { facingMode: "environment" }
                     });
-                    if (videoRef.current) {
-                        videoRef.current.srcObject = stream;
-                    }
-                    setPipelineLog(prev => [...prev, "📷 Camera stream swapped"]);
+                    if (videoRef.current) videoRef.current.srcObject = stream;
+                    emitEvent({ type: "system", message: "Camera stream swapped", level: "success" });
                 } catch (err) {
-                    console.error("Camera Hot-swap Error:", err);
-                    setPipelineLog(prev => [...prev, "❌ Camera swap failed: " + err.message]);
+                    emitEvent({ type: "system", message: "Camera swap failed: " + err.message, level: "error" });
                 }
             }
         }
     };
 
     // ══════════════════════════════════════════════════════════════
-    // START SESSION — mic + camera + backend reset (single action)
+    // START SESSION
     // ══════════════════════════════════════════════════════════════
     const startSession = async () => {
-        if (isSessionActive) return; // Prevent double init
+        if (isSessionActive) return;
 
-        console.log("[SESSION] Starting...");
-        setPipelineLog(["🟢 Session starting..."]);
+        setConversationLog([]);
+        setActionLog([]);
         setAlerts([]);
         setComparison(null);
         setStatus("Starting...");
 
+        emitEvent({ type: "system", message: "Session starting...", level: "info" });
+
         // 1. Reset backend
         try {
             await fetch(`${SYNC_BACKEND}/reset`, { method: 'POST' });
-            setPipelineLog(prev => [...prev, "✅ Backend reset"]);
+            emitEvent({ type: "system", message: "Backend reset", level: "success" });
         } catch (err) {
-            setPipelineLog(prev => [...prev, "❌ Backend reset failed"]);
+            emitEvent({ type: "system", message: "Backend reset failed", level: "error" });
         }
 
         // 2. Start camera
         try {
             if (selectedDeviceId === "IP_CAMERA") {
                 if (!ipCameraUrl) {
-                    setPipelineLog(prev => [...prev, "❌ IP Camera URL is missing!"]);
+                    emitEvent({ type: "system", message: "IP Camera URL is missing!", level: "error" });
                     setStatus("Error");
                     return;
                 }
-                setPipelineLog(prev => [...prev, "🌐 Connected to IP Camera stream"]);
+                emitEvent({ type: "system", message: "Connected to IP Camera stream", level: "success" });
             } else {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : { facingMode: "environment" }
                 });
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-                }
-                setPipelineLog(prev => [...prev, "📷 Local Camera active"]);
+                if (videoRef.current) videoRef.current.srcObject = stream;
+                emitEvent({ type: "system", message: "Local Camera active", level: "success" });
             }
         } catch (err) {
-            console.error("Camera Error:", err);
-            setPipelineLog(prev => [...prev, "❌ Camera failed: " + err.message]);
+            emitEvent({ type: "system", message: "Camera failed: " + err.message, level: "error" });
             setStatus("Error");
-            return; // Abort if camera fails
+            return;
         }
 
+        // 3. Start Diarization
+        try {
+            diarizationClientRef.current = new DiarizationClient({
+                onSegment: (seg) => {
+                    // ── Role is attached BEFORE text is logged ──
+                    emitEvent({
+                        type: "speech",
+                        role: seg.role || "unknown",
+                        text: seg.text,
+                        speakerId: seg.speaker_id,
+                        confidence: seg.confidence,
+                        displayConfidence: seg.displayConfidence || null
+                    });
+                },
+                onSpeakerChange: (change) => {
+                    const roles = { owner: "Owner", customer: "Customer", uncertain: "Unknown" };
+                    const label = roles[change.role] || "Unknown";
+                    emitEvent({ type: "system", message: `Speaker shifted to ${label}`, level: "info" });
+                }
+            });
+            await diarizationClientRef.current.startSession();
+            emitEvent({ type: "system", message: "Diarization Engine active", level: "success" });
+        } catch (err) {
+            emitEvent({ type: "system", message: "Diarization failed: " + err.message, level: "warn" });
+        }
+
+        // 4. Start mic
         try {
             const recognizer = startTranscription(async (text, isFinal) => {
-                console.log(`[FRONTEND-PIPELINE] 🎤 Speech event received: "${text}" (isFinal: ${isFinal})`);
-
-                // ── Pipeline guard: ignore if session stopped ──
-                if (!sessionActiveRef.current) {
-                    console.log("[FRONTEND-PIPELINE] ⚠️ Dropped transcript because sessionActiveRef is false");
-                    return;
-                }
-
-                // ── Guard: Ignore completely empty text (e.g. 15s silence timeouts) ──
-                if (!text || text.trim() === "") {
-                    console.warn("[FRONTEND-PIPELINE] ⚠️ Dropped empty transcript (Common during mic silence).");
-                    return;
-                }
+                if (!sessionActiveRef.current) return;
+                if (!text || text.trim() === "") return;
 
                 setLiveTranscript(text);
                 if (!isFinal) return;
+
+                // Log the speech with role from the latest diarization context
+                // Role will be determined by the backend on the full pipeline response
+                emitEvent({
+                    type: "speech",
+                    role: "unknown", // Will be overridden by backend response
+                    text: text,
+                    speakerId: null
+                });
 
                 const raw = text.toLowerCase();
                 const isTotal = raw.includes("total") || raw.includes("bill") || raw.includes("hisab");
 
                 if (isTotal) {
                     setStatus("Processing...");
-                    setPipelineLog(prev => [...prev, "⚡ 'Total' → pipeline firing..."]);
-                    console.log(`[FRONTEND-PIPELINE] 🎯 "Total" keyword matched! Assembling payload...`);
+                    emitEvent({ type: "system", message: "'Total' keyword detected → pipeline firing...", level: "info" });
                 }
 
-                // Build payload — attach frame or IP URL on "total"
-                const payload = { transcript: text };
-                if (isTotal) {
-                    const frameData = captureFrame();
+                // ── Build FormData payload (multipart/form-data for audio) ──
+                const formData = new FormData();
+                formData.append("transcript", text);
+                formData.append("speakerSessionId", diarizationClientRef.current?.sessionId || "");
+                formData.append("shopId", "shop_112");
+
+                // Capture audio blob from diarization client's rolling buffer
+                const audioBlob = diarizationClientRef.current?.getLatestAudioBlob();
+                if (audioBlob && audioBlob.size > 0) {
+                    formData.append("audio", audioBlob, `chunk_${Date.now()}.wav`);
+                    console.log(`[PIPELINE] 🎤 Audio attached: ${(audioBlob.size / 1024).toFixed(1)}KB, type=${audioBlob.type}`);
+                } else {
+                    console.warn("[PIPELINE] ⚠️ No audio blob available from diarization client");
+                }
+
+                const frameData = captureFrame();
+                const isQuestion = raw.includes("kitna") || raw.includes("kitne") || raw.includes("hua");
+
+                if (isTotal || isQuestion) {
                     if (frameData.image) {
-                        payload.image = frameData.image;
-                        setPipelineLog(prev => [...prev, "📸 Local frame captured"]);
-                        console.log(`[FRONTEND-PIPELINE] 📸 Appended local frame to payload (${Math.round(frameData.image.length / 1024)}KB)`);
+                        formData.append("image", frameData.image);
+                        emitEvent({ type: "system", message: `Frame attached for ${isTotal ? 'Transaction' : 'Verification'}`, level: "info" });
                     } else if (frameData.ipCameraUrl) {
-                        payload.ipCameraUrl = frameData.ipCameraUrl;
-                        setPipelineLog(prev => [...prev, "🌐 Routed Network snapshot trigger"]);
-                        console.log(`[FRONTEND-PIPELINE] 🌐 Appended IP Camera URL to payload.`);
-                    } else {
-                        setPipelineLog(prev => [...prev, "⚠️ Frame capture failed"]);
-                        console.log(`[FRONTEND-PIPELINE] ⚠️ Both local and IP frame capture returned null.`);
+                        formData.append("ipCameraUrl", frameData.ipCameraUrl);
+                        emitEvent({ type: "system", message: "Network snap trigger attached", level: "info" });
                     }
                 }
 
-                console.log(`[FRONTEND-PIPELINE] 🚀 Dispatching POST to ${SYNC_BACKEND}/voice-orchestrator`);
                 try {
                     const res = await fetch(`${SYNC_BACKEND}/voice-orchestrator`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
+                        body: formData  // No Content-Type header — browser sets multipart boundary automatically
                     });
-
-                    if (!res.ok) {
-                        console.error(`[FRONTEND-PIPELINE] ❌ Backend returned HTTP ${res.status}`);
-                    }
-
                     const data = await res.json();
-                    console.log(`[FRONTEND-PIPELINE] 📥 Backend responded:`, data);
-
-                    // ── Handle responses ──
-                    handlePipelineResponse(data);
+                    handlePipelineResponse(data, text);
                     fetchSession();
                 } catch (err) {
-                    console.error("[FRONTEND-PIPELINE] ❌ Fetch Error:", err);
-                    setPipelineLog(prev => [...prev, "❌ Network Error communicating with backend"]);
+                    emitEvent({ type: "system", message: "Network Error communicating with backend", level: "error" });
                 }
             });
             recognizerRef.current = recognizer;
-            setPipelineLog(prev => [...prev, "🎤 Microphone active"]);
+            emitEvent({ type: "system", message: "Microphone active", level: "success" });
         } catch (err) {
-            console.error("Mic Error:", err);
-            setPipelineLog(prev => [...prev, "❌ Mic failed: " + err.message]);
-            // Stop camera if mic fails
+            emitEvent({ type: "system", message: "Mic failed: " + err.message, level: "error" });
             stopCamera();
             setStatus("Error");
             return;
         }
 
-        // 4. All good
         setIsSessionActive(true);
         setStatus("Active");
         setLiveTranscript("");
-        setPipelineLog(prev => [...prev, "═══════════════════════", "✅ SESSION ACTIVE — speak to bill items", "═══════════════════════"]);
+        emitEvent({ type: "system", message: "SESSION ACTIVE — speak to bill items", level: "success" });
     };
 
     // ══════════════════════════════════════════════════════════════
-    // STOP SESSION — cleanup everything
+    // STOP SESSION
     // ══════════════════════════════════════════════════════════════
     const stopSession = async () => {
         if (!isSessionActive) return;
-
-        console.log("[SESSION] Stopping...");
         setIsSessionActive(false);
 
-        // 1. Stop mic
         if (recognizerRef.current) {
             stopTranscription(recognizerRef.current);
             recognizerRef.current = null;
         }
-
-        // 2. Stop camera
+        if (diarizationClientRef.current) {
+            await diarizationClientRef.current.endSession();
+            diarizationClientRef.current = null;
+        }
         stopCamera();
 
-        // 3. Reset backend
         try {
             await fetch(`${SYNC_BACKEND}/reset`, { method: 'POST' });
         } catch (err) { /* ignore */ }
 
-        // 4. Clear UI
         setStatus("Idle");
         setLiveTranscript("");
         setSession({ cv_items: {}, audio_items: {}, audio_total: null, expected_total: null, alerts: [] });
         setComparison(null);
         setAlerts([]);
-        setPipelineLog(["⏹️ Session stopped. All resources released."]);
+        emitEvent({ type: "system", message: "Session stopped. All resources released.", level: "info" });
     };
 
     const stopCamera = () => {
@@ -315,20 +391,53 @@ const MatchingDashboard = () => {
         }
     };
 
-    // ── Handle all pipeline responses in one place ──
-    const handlePipelineResponse = (data) => {
-        console.log(`[PIPELINE] Handling response payload:`, data);
+    // ── Handle all pipeline responses ──
+    const handlePipelineResponse = (data, originalText) => {
+        // Attach speaker role from backend response to conversation log retroactively
+        if (data.speaker && originalText) {
+            // Update the last conversation entry with the correct role from backend
+            setConversationLog(prev => {
+                const updated = [...prev];
+                // Find the most recent entry matching this text
+                for (let i = updated.length - 1; i >= 0; i--) {
+                    if (updated[i].text === originalText && updated[i].role === "unknown") {
+                        updated[i] = {
+                            ...updated[i],
+                            role: data.speaker.role,
+                            confidence: data.speaker.confidence,
+                            displayConfidence: data.speaker.displayConfidence
+                        };
+                        break;
+                    }
+                }
+                return updated;
+            });
+        }
+
+        // Handle silent pass — AI decided not to trigger, do NOT interrupt or log
+        if (data.status === "silent_pass") {
+            // Only update speaker role retroactively, zero noise
+            return;
+        }
+
+        // Handle blocked/uncertain responses from the owner gate
+        if (data.status === "blocked") {
+            emitEvent({ type: "system", message: `🚫 BLOCKED: ${data.message}`, level: "warn" });
+            return;
+        }
+        if (data.status === "uncertain") {
+            emitEvent({ type: "system", message: `⚠️ ${data.message}`, level: "warn" });
+            return;
+        }
 
         if (data.type === "ai_response") {
-            // Anti-spam: prevent duplicate messages within 3s
             setAiResponses(prev => {
                 const now = Date.now();
                 const isDuplicate = prev.some(r => r.message === data.message && (now - r.timestamp) < 3000);
                 if (isDuplicate) return prev;
-                // Add new response at the top
                 return [{ ...data, timestamp: now }, ...prev];
             });
-            setPipelineLog(prev => [...prev, `🤖 AI (${data.category}): ${data.message}`]);
+            emitEvent({ type: "system", message: `AI (${data.category}): ${data.message}`, level: "info" });
             setStatus("Active");
             return;
         }
@@ -338,15 +447,14 @@ const MatchingDashboard = () => {
             setStatus(data.status === "ok" ? "✓ Verified" : data.status === "mismatch" ? "⚠ Mismatch" : "Partial");
             if (data.session) setSession(data.session);
 
-            const logs = [
-                `🗣️ Audio: ${Object.entries(data.audio_items || {}).map(([k, v]) => `${k} x${v}`).join(", ") || "none"}`,
-                `👁️ CV (${data.cv_source}): ${Object.entries(data.items_detected || {}).map(([k, v]) => `${k} x${v}`).join(", ")}`,
-                `💰 Expected: ₹${data.expected_total}  |  Stated: ₹${data.audio_total}`,
-                `📋 ${data.status.toUpperCase()} (Δ ₹${data.difference?.toFixed(2) || 0})`
-            ];
-            if (data.missing_items?.length > 0) logs.push(`🔴 Unbilled: ${data.missing_items.map(i => `${i.product}(x${i.cv_qty})`).join(", ")}`);
-            if (data.extra_items?.length > 0) logs.push(`🟡 Extra: ${data.extra_items.map(i => `${i.product}(x${i.audio_qty})`).join(", ")}`);
-            setPipelineLog(prev => [...prev, ...logs]);
+            emitEvent({ type: "system", message: `Audio: ${Object.entries(data.audio_items || {}).map(([k, v]) => `${k} x${v}`).join(", ") || "none"}`, level: "info" });
+            emitEvent({ type: "system", message: `CV (${data.cv_source}): ${Object.entries(data.items_detected || {}).map(([k, v]) => `${k} x${v}`).join(", ")}`, level: "info" });
+            emitEvent({ type: "system", message: `Expected: ₹${data.expected_total}  |  Stated: ₹${data.audio_total}`, level: "info" });
+            emitEvent({ type: "system", message: `${data.status.toUpperCase()} (Δ ₹${data.difference?.toFixed(2) || 0})`, level: data.status === "mismatch" ? "error" : "success" });
+
+            if (data.missing_items?.length > 0) {
+                emitEvent({ type: "system", message: `Unbilled: ${data.missing_items.map(i => `${i.product}(x${i.cv_qty})`).join(", ")}`, level: "error" });
+            }
 
             if (data.status === "mismatch") {
                 const unbilled = data.missing_items?.map(i => i.product).join(", ");
@@ -358,34 +466,29 @@ const MatchingDashboard = () => {
 
         } else if (data.status === "no_items") {
             setStatus("No Items");
-            setPipelineLog(prev => [...prev, "⛔ No CV items detected. Retrying..."]);
+            emitEvent({ type: "system", message: "No CV items detected", level: "warn" });
 
         } else if (data.status === "no_image") {
             setStatus("No Camera");
-            setPipelineLog(prev => [...prev, "📷 No frame captured — camera issue"]);
+            emitEvent({ type: "system", message: "No frame captured — camera issue", level: "warn" });
 
         } else if (data.status === "accumulating") {
             setStatus("Active");
-            const items = data.parsed?.items ? Object.entries(data.parsed.items).map(([k, v]) => `${k} x${v}`).join(", ") : "none";
-            setPipelineLog(prev => [...prev, `📝 Intent Logged: ${data.message}`]);
+            emitEvent({ type: "system", message: `Intent Logged: ${data.message}`, level: "info" });
 
         } else if (data.status === "reset_done") {
             setSession(data.session || { cv_items: {}, audio_items: {}, audio_total: null, expected_total: null, alerts: [] });
             setStatus("Active");
             setComparison(null);
             setAlerts([]);
-            setPipelineLog(prev => [...prev, "🔄 Reset. Ready for next."]);
+            emitEvent({ type: "system", message: "Reset. Ready for next.", level: "success" });
             setLiveTranscript("");
 
         } else if (data.status === "busy") {
-            console.warn("[PIPELINE] Backend is busy.");
-            setPipelineLog(prev => [...prev, "⚠️ Backend Busy: Processing previous command."]);
+            emitEvent({ type: "system", message: "Backend Busy: Processing previous command.", level: "warn" });
 
         } else if (data.error) {
-            console.error("[PIPELINE] Backend Error:", data.error);
-            setPipelineLog(prev => [...prev, `❌ Error: ${data.error}`]);
-        } else {
-            console.warn("[PIPELINE] Unhandled Event Response:", data);
+            emitEvent({ type: "system", message: `Error: ${data.error}`, level: "error" });
         }
     };
 
@@ -451,7 +554,6 @@ const MatchingDashboard = () => {
                         <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Vision-Voice Reconciliation</p>
                     </div>
                     <div className="flex items-center gap-4">
-                        {/* Status Badge */}
                         <div className={`px-6 py-2.5 rounded-2xl border flex items-center gap-3 text-sm font-black transition-all duration-700 shadow-xl ${isMismatch ? 'bg-red-500 text-white border-red-400 scale-105 animate-pulse' :
                             isOK ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
                                 isSessionActive ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' :
@@ -472,8 +574,6 @@ const MatchingDashboard = () => {
                                     Counter Vision
                                     {isSessionActive && <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />}
                                 </h3>
-
-                                {/* ── Camera Selector ── */}
                                 {videoDevices.length > 0 && (
                                     <select
                                         value={selectedDeviceId}
@@ -490,7 +590,6 @@ const MatchingDashboard = () => {
                                 )}
                             </div>
 
-                            {/* ── Optional IP Url Input ── */}
                             {selectedDeviceId === "IP_CAMERA" && (
                                 <div className="mb-4">
                                     <input
@@ -507,7 +606,6 @@ const MatchingDashboard = () => {
                             )}
 
                             <div className="relative flex-1 bg-black/50 rounded-2xl overflow-hidden border border-white/5 min-h-[240px]">
-
                                 {selectedDeviceId === "IP_CAMERA" ? (
                                     <img
                                         src={isSessionActive && ipCameraUrl ? `${ipCameraUrl}/video` : undefined}
@@ -548,8 +646,6 @@ const MatchingDashboard = () => {
 
                     {/* Central Panel */}
                     <div className="lg:col-span-5 space-y-6">
-
-                        {/* Mismatch Alarm */}
                         <AnimatePresence>
                             {isMismatch && (
                                 <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="p-6 bg-red-600 rounded-3xl shadow-2xl border-2 border-red-400 flex items-center gap-6">
@@ -562,7 +658,6 @@ const MatchingDashboard = () => {
                             )}
                         </AnimatePresence>
 
-                        {/* Totals */}
                         <div className="bg-[#111114] border border-white/10 rounded-3xl p-10 flex flex-col items-center justify-center gap-10 shadow-2xl">
                             <div className="flex justify-between w-full gap-12 text-white">
                                 <div className="text-center flex-1">
@@ -578,7 +673,6 @@ const MatchingDashboard = () => {
                                 </div>
                             </div>
 
-                            {/* ═══ THE SINGLE BUTTON ═══ */}
                             <button
                                 onClick={isSessionActive ? stopSession : startSession}
                                 className={`w-full py-6 rounded-3xl font-black text-lg transition-all flex items-center justify-center gap-4 ${isSessionActive
@@ -593,7 +687,6 @@ const MatchingDashboard = () => {
                                 )}
                             </button>
 
-                            {/* Active indicators */}
                             {isSessionActive && (
                                 <div className="flex gap-6 text-[10px] font-black uppercase tracking-widest">
                                     <span className="flex items-center gap-2 text-emerald-400"><Camera size={12} /> Camera</span>
@@ -604,27 +697,96 @@ const MatchingDashboard = () => {
                         </div>
                     </div>
 
-                    {/* Pipeline Log (Right) */}
+                    {/* ══════════════════════════════════════════════════════════
+                       DUAL LOG PANEL (Right)
+                    ══════════════════════════════════════════════════════════ */}
                     <div className="lg:col-span-3 space-y-6 flex flex-col h-full">
                         <section className="bg-[#111114] border border-white/5 rounded-3xl p-6 flex-1 flex flex-col">
-                            <h3 className="text-gray-500 text-[10px] font-black uppercase tracking-widest mb-6 flex items-center gap-2">
-                                <Zap size={14} className="text-blue-400" /> Pipeline Log
-                            </h3>
+
+                            {/* Tab Switcher */}
+                            <div className="flex items-center gap-2 mb-4">
+                                <button
+                                    onClick={() => setActiveLogTab("conversation")}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeLogTab === "conversation"
+                                        ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                                        : "text-gray-600 hover:text-gray-400"
+                                        }`}
+                                >
+                                    <MessageSquare size={12} /> Chat
+                                    {conversationLog.length > 0 && (
+                                        <span className="ml-1 bg-blue-500/30 text-blue-300 px-1.5 py-0.5 rounded-full text-[8px]">{conversationLog.length}</span>
+                                    )}
+                                </button>
+                                <button
+                                    onClick={() => setActiveLogTab("action")}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeLogTab === "action"
+                                        ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                                        : "text-gray-600 hover:text-gray-400"
+                                        }`}
+                                >
+                                    <Zap size={12} /> System
+                                    {actionLog.length > 0 && (
+                                        <span className="ml-1 bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded-full text-[8px]">{actionLog.length}</span>
+                                    )}
+                                </button>
+                            </div>
+
+                            {/* Log Content */}
                             <div className="flex-1 rounded-2xl bg-black/50 border border-white/5 p-5 font-mono text-sm leading-relaxed overflow-y-auto max-h-[400px]">
-                                {isSessionActive && liveTranscript && (
-                                    <p className="text-gray-300 mb-4 border-b border-white/5 pb-3">🎤 "{liveTranscript}"</p>
+
+                                {/* Live transcript indicator */}
+                                {isSessionActive && liveTranscript && activeLogTab === "conversation" && (
+                                    <p className="text-gray-500 mb-4 border-b border-white/5 pb-3 italic text-xs">🎤 "{liveTranscript}"</p>
                                 )}
-                                {pipelineLog.length > 0 ? (
-                                    <div className="space-y-2">
-                                        {pipelineLog.map((log, i) => (
-                                            <p key={i} className={`text-xs ${log.includes("═") ? "text-blue-500 font-bold" : log.includes("❌") || log.includes("🔴") ? "text-red-400" : "text-gray-400"}`}>{log}</p>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div className="h-full flex flex-col items-center justify-center opacity-10">
-                                        <Power size={32} />
-                                        <p className="text-[9px] mt-2 uppercase">Start session to begin</p>
-                                    </div>
+
+                                {/* ── CONVERSATION LOG ── */}
+                                {activeLogTab === "conversation" && (
+                                    conversationLog.length > 0 ? (
+                                        <div className="space-y-3">
+                                            {conversationLog.map((entry, i) => (
+                                                <div key={i} className="flex flex-col gap-0.5 border-b border-white/[0.03] pb-2 last:border-0 last:pb-0">
+                                                    <SpeakerBadge
+                                                        role={entry.role}
+                                                        displayConfidence={entry.displayConfidence}
+                                                        className="text-[10px]"
+                                                    />
+                                                    <p className="text-xs text-gray-200 leading-snug pl-1">{entry.text}</p>
+                                                </div>
+                                            ))}
+                                            <div ref={conversationEndRef} />
+                                        </div>
+                                    ) : (
+                                        <div className="h-full flex flex-col items-center justify-center opacity-10">
+                                            <MessageSquare size={32} />
+                                            <p className="text-[9px] mt-2 uppercase">No conversation yet</p>
+                                        </div>
+                                    )
+                                )}
+
+                                {/* ── ACTION LOG ── */}
+                                {activeLogTab === "action" && (
+                                    actionLog.length > 0 ? (
+                                        <div className="space-y-2">
+                                            {actionLog.map((entry, i) => (
+                                                <p key={i} className={`text-xs ${entry.level === "error" ? "text-red-400" :
+                                                    entry.level === "warn" ? "text-amber-400" :
+                                                        entry.level === "success" ? "text-emerald-400" :
+                                                            "text-gray-500"
+                                                    }`}>
+                                                    {entry.level === "error" ? "❌" :
+                                                        entry.level === "warn" ? "⚠️" :
+                                                            entry.level === "success" ? "✅" : "⚙️"}{" "}
+                                                    {entry.message}
+                                                </p>
+                                            ))}
+                                            <div ref={actionEndRef} />
+                                        </div>
+                                    ) : (
+                                        <div className="h-full flex flex-col items-center justify-center opacity-10">
+                                            <Power size={32} />
+                                            <p className="text-[9px] mt-2 uppercase">Start session to begin</p>
+                                        </div>
+                                    )
                                 )}
                             </div>
                         </section>

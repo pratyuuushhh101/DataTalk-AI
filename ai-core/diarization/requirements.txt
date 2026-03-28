@@ -1,0 +1,33 @@
+# ── Speaker Diarization Microservice Dependencies ──
+# Core server
+fastapi==0.115.0
+uvicorn[standard]==0.34.0
+python-multipart==0.0.18
+websockets==14.2
+
+# Audio processing
+numpy>=1.26.0,<2.0
+scipy>=1.14.0
+soundfile>=0.13.0
+librosa>=0.10.2
+pydub>=0.25.1
+
+# VAD (Voice Activity Detection)
+onnxruntime>=1.20.0
+silero-vad>=5.1
+
+# Speaker Embeddings
+speechbrain>=1.0.0
+torch>=2.4.0
+torchaudio>=2.4.0
+
+# Speaker Diarization (open-source fallback)
+pyannote.audio>=3.3.0
+
+# Azure Speech SDK
+azure-cognitiveservices-speech>=1.40.0
+
+# Utilities
+python-dotenv>=1.0.1
+pydantic>=2.10.0
+requests>=2.31.0
