@@ -12,3 +12,4 @@ build/
 *.ogg
 *.wav.json
 uploads
+ai-core/diarization/venv/

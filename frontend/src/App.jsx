@@ -11,6 +11,8 @@ import UnderConstruction from './pages/UnderConstruction';
 import WhatsAppChatbotPage from './pages/WhatsAppChatbotPage';
 import FounderKit from './pages/FounderKit';
 import Layout from './components/Layout';
+import { OwnerVoiceEnrollment } from './components/OwnerVoiceEnrollment';
+import OwnerVoiceProfile from './pages/OwnerVoiceProfile';
 
 // Shared page transition configuration
 const pageTransition = {
@@ -94,6 +96,25 @@ const AnimatedRoutes = () => {
           <motion.div {...pageTransition} className="h-full">
             <Layout>
               <FounderKit />
+            </Layout>
+          </motion.div>
+        } />
+
+        <Route path="/owner-voice-profile" element={
+          <motion.div {...pageTransition} className="h-full">
+            <Layout>
+              <OwnerVoiceProfile />
+            </Layout>
+          </motion.div>
+        } />
+
+        {/* Voice Enrollment Setup Route */}
+        <Route path="/enroll" element={
+          <motion.div {...pageTransition} className="h-full">
+            <Layout>
+              <div className="flex items-center justify-center h-full w-full bg-gray-50 pt-10">
+                <OwnerVoiceEnrollment shopId="shop_112" onComplete={() => window.location.href = '/sync'} />
+              </div>
             </Layout>
           </motion.div>
         } />

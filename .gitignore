@@ -47,3 +47,8 @@ coverage/
 
 # ── Archive lock files ──────────────────────────────────────────────────────────
 archive/**/package-lock.json
+
+out*.txt
+__pycache__/
+*.pyc
+venv/

@@ -11,6 +11,7 @@ import analyzeRoute from "./routes/analyze.routes.js";
 import transactionRoutes from "./routes/transaction.routes.js";
 import debugRoutes from "./routes/debug.routes.js";
 import demoRoutes from "./routes/demo.routes.js";
+import speakerRoutes from "./routes/speaker.routes.js";
 import { startCronJobs } from "./jobs/cron.js";
 
 dotenv.config();
@@ -35,6 +36,7 @@ app.use("/twilio-debug", debugRoutes);
 app.use("/api/analyze", analyzeRoute);
 app.use("/api", transactionRoutes);
 app.use("/demo", demoRoutes);
+app.use("/speaker", speakerRoutes);  // Speaker diarization API
 
 app.get("/", (req, res) => {
   res.send("Backend running");
