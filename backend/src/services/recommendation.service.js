@@ -1,5 +1,6 @@
 import { getEventRecommendations } from "./event.service.js";
 import { fetchFestivalRecommendations } from "./festival.service.js";
+import { recommendSchemes } from "./scheme.service.js";
 
 function getBasketRecommendations(salesData) {
   if (!Array.isArray(salesData)) return { combinations: [] };
@@ -53,6 +54,7 @@ export async function getRecommendations(input) {
   const eventRecommendations = await getEventRecommendations(region);
   const basket = getBasketRecommendations(salesData);
   const coldStart = getColdStartRecommendations(globalSalesData);
+  const government_schemes = recommendSchemes(salesData);
 
   let festival_insights = null;
 
@@ -64,6 +66,7 @@ export async function getRecommendations(input) {
     events: eventRecommendations,
     basket,
     coldStart,
-    festival_insights
+    festival_insights,
+    government_schemes
   };
 }
