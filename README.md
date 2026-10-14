@@ -229,11 +229,10 @@ Ensure you have the following:
 **1. Clone the repository**
 
 ```bash
-git clone git@github.com:YOUR_USERNAME/YOUR_REPOSITORY.git
-cd YOUR_REPOSITORY
+git clone git@github.com:pratyuuushhh101/DataTalk-AI.git
+cd DataTalk-AI
 ```
 
-Replace `YOUR_USERNAME/YOUR_REPOSITORY` with your actual GitHub repository path.
 
 **2. Install dependencies**
 
