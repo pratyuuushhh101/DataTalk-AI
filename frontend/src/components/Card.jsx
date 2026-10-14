@@ -2,14 +2,24 @@ import React from 'react';
 
 const Card = ({ title, value, subtitle, trend, trendUp, icon, children, className = '' }) => {
     return (
-        <div className={`bg-card-bg backdrop-blur-md rounded-2xl shadow-lg border border-card-border p-5 hover:border-card-hover-border hover:shadow-[0_0_20px_rgba(202,255,102,0.06)] transition-all duration-300 ${className}`}>
+        <div
+            style={{
+                backgroundColor: 'var(--dt-surface)',
+                borderColor: 'var(--dt-border)',
+                borderRadius: 'var(--dt-radius)'
+            }}
+            className={`border p-5 transition-colors duration-150 ${className}`}
+        >
             {(title || icon) && (
                 <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
+                    <h3
+                        style={{ color: 'var(--dt-text-muted)' }}
+                        className="text-[11px] font-semibold uppercase tracking-wider"
+                    >
                         {title}
                     </h3>
                     {icon && (
-                        <div className="text-accent opacity-60">
+                        <div style={{ color: 'var(--dt-text-faint)' }}>
                             {icon}
                         </div>
                     )}
@@ -17,19 +27,29 @@ const Card = ({ title, value, subtitle, trend, trendUp, icon, children, classNam
             )}
             {(value || value === 0) && (
                 <div className="flex items-baseline mb-1">
-                    <span className="text-3xl font-bold text-gray-100">{value}</span>
+                    <span
+                        style={{ color: 'var(--dt-text)' }}
+                        className="text-2xl font-semibold tracking-tight font-mono tabular-nums"
+                    >
+                        {value}
+                    </span>
                     {trend && (
                         <span
-                            className={`ml-2 text-sm font-medium flex items-center ${trendUp ? 'text-accent' : 'text-red-400'
-                                }`}
+                            className={`ml-2 text-xs font-mono font-medium flex items-center ${
+                                trendUp ? 'text-emerald-500' : 'text-red-500'
+                            }`}
                         >
                             {trendUp ? '↑' : '↓'} {trend}
                         </span>
                     )}
                 </div>
             )}
-            {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
-            {children && <div className="mt-4">{children}</div>}
+            {subtitle && (
+                <p style={{ color: 'var(--dt-text-faint)' }} className="text-xs mt-1">
+                    {subtitle}
+                </p>
+            )}
+            {children && <div className={title || value ? 'mt-4' : ''}>{children}</div>}
         </div>
     );
 };

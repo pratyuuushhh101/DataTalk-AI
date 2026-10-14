@@ -1,81 +1,50 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { IndianRupee, TrendingUp, Percent, Award, Calendar, Hash } from 'lucide-react';
-import Card from './Card';
+import React, { useMemo } from 'react';
 
-const ICON_MAP = {
-    quantity: <Award className="w-5 h-5" />,
-    count: <Award className="w-5 h-5" />,
-    margin: <Percent className="w-5 h-5" />,
-    revenue: <IndianRupee className="w-5 h-5" />,
-    sales: <IndianRupee className="w-5 h-5" />,
-    price: <IndianRupee className="w-5 h-5" />,
-    cost: <IndianRupee className="w-5 h-5" />,
-    profit: <TrendingUp className="w-5 h-5" />,
-    total: <IndianRupee className="w-5 h-5" />,
-    amount: <IndianRupee className="w-5 h-5" />,
-    year: <Calendar className="w-5 h-5" />,
-    id: <Hash className="w-5 h-5" />
-};
-
-const GRADIENT_BORDERS = [
-    'border-l-4 border-l-accent',
-    'border-l-4 border-l-accent-dim',
-    'border-l-4 border-l-accent/50',
-    'border-l-4 border-l-accent/80',
+const QUANTITY_PATTERNS = [
+    'quantity', 'qty', 'sold', 'unit', 'units', 'count',
+    'stock', 'item', 'items', 'order', 'orders', 'volume',
+    'number', 'num', 'pack', 'packs', ' threshold', 'days'
 ];
 
-const getIcon = (key) => {
+const CURRENCY_PATTERNS = [
+    'revenue', 'price', 'cost', 'profit', 'amount',
+    'income', 'earning', 'spend', 'expense', 'wholesale',
+    'mrp', 'rupee', 'inr', 'value', 'turnover'
+];
+
+const isCurrencyKey = (key) => {
     const lower = key.toLowerCase();
-    for (const [pattern, icon] of Object.entries(ICON_MAP)) {
-        if (lower.includes(pattern)) return icon;
+
+    // 1. If the column name mentions any quantity/unit/sold/count term, it is NEVER currency
+    //    (e.g., "TotalSold", "TotalQuantity", "UnitsSold", "SalesCount")
+    if (QUANTITY_PATTERNS.some((q) => lower.includes(q))) {
+        return false;
     }
-    return <TrendingUp className="w-5 h-5" />;
+
+    // 2. Check explicit money terms
+    if (CURRENCY_PATTERNS.some((c) => lower.includes(c))) {
+        return true;
+    }
+
+    // 3. Only treat "sales" or "total" as currency if it's specifically "total_sales" / "sales" without quantity words
+    if (lower === 'sales' || lower === 'total_sales' || lower === 'totalsales') {
+        return true;
+    }
+
+    return false;
 };
 
-const formatLargeNumber = (num, isAveraged = false) => {
+const formatMetric = (num, key, isAveraged, isPercent) => {
     if (isNaN(num)) return '0';
-    if (isAveraged || Math.abs(num) < 1000) {
-        return num % 1 !== 0 ? num.toFixed(2) : num.toLocaleString();
+    if (isPercent) {
+        return (num % 1 !== 0 ? num.toFixed(1) : num.toString()) + '%';
     }
-    if (Math.abs(num) >= 1e9) return (num / 1e9).toFixed(1) + 'B';
-    if (Math.abs(num) >= 1e6) return (num / 1e6).toFixed(1) + 'M';
-    if (Math.abs(num) >= 1e3) return (num / 1e3).toFixed(1) + 'K';
-    return num.toLocaleString();
-};
+    const prefix = isCurrencyKey(key) ? '₹' : '';
 
-const AnimatedNumber = ({ value, formattedValue }) => {
-    const [displayVal, setDisplayVal] = useState('0');
-
-    useEffect(() => {
-        const numericVal = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
-        if (isNaN(numericVal)) {
-            setDisplayVal(formattedValue);
-            return;
-        }
-
-        const duration = 800;
-        const steps = 30;
-        const stepDuration = duration / steps;
-        let current = 0;
-
-        const timer = setInterval(() => {
-            current++;
-            const progress = current / steps;
-            const eased = 1 - Math.pow(1 - progress, 3);
-            const currentNum = numericVal * eased;
-
-            if (current >= steps) {
-                setDisplayVal(formattedValue);
-                clearInterval(timer);
-            } else {
-                setDisplayVal(formatLargeNumber(currentNum, false));
-            }
-        }, stepDuration);
-
-        return () => clearInterval(timer);
-    }, [value, formattedValue]);
-
-    return <span>{displayVal}</span>;
+    if (isAveraged) {
+        return prefix + (num % 1 !== 0 ? num.toFixed(2) : num.toLocaleString('en-IN'));
+    }
+    return prefix + num.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 };
 
 const KpiCards = ({ data }) => {
@@ -83,52 +52,88 @@ const KpiCards = ({ data }) => {
         if (!data || data.length === 0) return [];
 
         const keys = Object.keys(data[0]);
-        const numericKeys = keys.filter(key => typeof data[0][key] === 'number');
+        const numericKeys = keys.filter(
+            (key) => typeof data[0][key] === 'number' && key.toLowerCase() !== 'id'
+        );
 
         if (numericKeys.length === 0) return [];
 
-        return numericKeys.map(key => {
+        return numericKeys.slice(0, 4).map((key) => {
             const lowerKey = key.toLowerCase();
-            const isYearOrRate = lowerKey.includes('year') || lowerKey.includes('rate') || lowerKey.includes('pct') || lowerKey.includes('percentage');
-            
-            let finalVal;
-            if (isYearOrRate && data.length > 0) {
-                // Average out years or percentages instead of summing them up
-                const total = data.reduce((acc, row) => acc + (Number(row[key]) || 0), 0);
-                finalVal = total / data.length;
-            } else {
-                finalVal = data.reduce((acc, row) => acc + (Number(row[key]) || 0), 0);
-            }
+            const isPercent =
+                lowerKey.includes('pct') ||
+                lowerKey.includes('percent') ||
+                lowerKey.includes('margin_pct');
 
-            const formatted = formatLargeNumber(finalVal, isYearOrRate);
-            const title = key.replace(/_/g, ' ').toUpperCase();
+            const isAveraged =
+                isPercent ||
+                lowerKey.includes('year') ||
+                lowerKey.includes('rate') ||
+                lowerKey.includes('avg') ||
+                lowerKey.includes('average') ||
+                lowerKey.includes('unit_price') ||
+                lowerKey.includes('unit_cost') ||
+                lowerKey.includes('selling_price') ||
+                lowerKey.includes('wholesale_price');
+
+            const total = data.reduce((acc, row) => acc + (Number(row[key]) || 0), 0);
+            const finalVal = isAveraged && data.length > 0 ? total / data.length : total;
+
+            // Format clean human-readable title (e.g., "TotalSold" -> "TOTAL SOLD")
+            const title = key
+                .replace(/([a-z])([A-Z])/g, '$1 $2')
+                .replace(/_/g, ' ')
+                .toUpperCase();
 
             return {
                 id: key,
-                title,
-                value: finalVal,
-                formattedValue: formatted,
-                icon: getIcon(key)
+                label: title,
+                sublabel:
+                    isAveraged && data.length > 1
+                        ? 'Average across rows'
+                        : `${data.length} record${data.length > 1 ? 's' : ''}`,
+                formattedValue: formatMetric(finalVal, key, isAveraged, isPercent)
             };
-        }).slice(0, 4);
+        });
     }, [data]);
 
     if (!data || data.length === 0 || kpis.length === 0) return null;
 
     return (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            {kpis.map((kpi, idx) => (
+        <div
+            style={{
+                backgroundColor: 'var(--dt-border)',
+                borderColor: 'var(--dt-border)',
+                borderRadius: 'var(--dt-radius)'
+            }}
+            className="grid grid-cols-2 lg:grid-cols-4 gap-px border overflow-hidden mb-5"
+        >
+            {kpis.map((kpi) => (
                 <div
                     key={kpi.id}
-                    className={`animate-fade-in-up ${GRADIENT_BORDERS[idx % GRADIENT_BORDERS.length]}`}
-                    style={{ animationDelay: `${idx * 100}ms`, opacity: 0, animationFillMode: 'forwards' }}
+                    style={{ backgroundColor: 'var(--dt-surface)' }}
+                    className="p-4 flex flex-col justify-between"
                 >
-                    <Card
-                        title={kpi.title}
-                        icon={kpi.icon}
-                        value={<AnimatedNumber value={kpi.value} formattedValue={kpi.formattedValue} />}
-                        className="!rounded-l-none"
-                    />
+                    <div className="flex items-center justify-between mb-1.5">
+                        <span
+                            style={{ color: 'var(--dt-text-muted)' }}
+                            className="text-[11px] font-mono uppercase tracking-wider truncate"
+                        >
+                            {kpi.label}
+                        </span>
+                    </div>
+                    <div
+                        style={{ color: 'var(--dt-text)' }}
+                        className="text-2xl font-mono font-semibold tracking-tight tabular-nums"
+                    >
+                        {kpi.formattedValue}
+                    </div>
+                    <span
+                        style={{ color: 'var(--dt-text-faint)' }}
+                        className="text-[11px] mt-1"
+                    >
+                        {kpi.sublabel}
+                    </span>
                 </div>
             ))}
         </div>

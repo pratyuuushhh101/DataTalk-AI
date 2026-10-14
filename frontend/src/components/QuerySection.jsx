@@ -1,320 +1,271 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, Loader, Lock, Mic, MicOff, CheckCircle, Globe, ChevronDown, Check } from 'lucide-react';
-import Card from './Card';
+import { CornerDownLeft, Loader, Mic, Square, Terminal } from 'lucide-react';
 
-const LANGUAGES = [
-    { code: 'en-IN', label: 'English', flag: '🇬🇧', id: 'en' },
-    { code: 'hi-IN', label: 'Hindi', flag: '🇮🇳', id: 'hi' },
-    { code: 'bn-IN', label: 'Bengali', flag: '🇮🇳', id: 'bn' }
+const AI_CORE_URL = import.meta.env.VITE_AI_CORE_URL || 'http://localhost:8000';
+
+const LANG_LABELS = {
+    en: 'EN',
+    hi: 'HI',
+    bn: 'BN'
+};
+
+const QUICK_PROMPTS = [
+    'Top 5 products by revenue',
+    'Monthly revenue trend',
+    'Total profit by region',
+    'ম্যাগি থেকে মোট কত লাভ হয়েছে?',
+    'South region me kitna profit hua?'
 ];
 
 const QuerySection = ({ uploaded, loading, question, setQuestion, onSubmit }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [voiceStatus, setVoiceStatus] = useState(null);
     const [voiceError, setVoiceError] = useState(null);
-    const [interimTranscript, setInterimTranscript] = useState('');
-    const [speakingLang, setSpeakingLang] = useState(LANGUAGES[0]);
-    const [showLangMenu, setShowLangMenu] = useState(false);
+    const [detectedBadge, setDetectedBadge] = useState(null);
 
-    const recognitionRef = useRef(null);
-    const silenceTimerRef = useRef(null);
-    const finalTranscriptRef = useRef('');
+    const mediaRecorderRef = useRef(null);
+    const mediaStreamRef = useRef(null);
+    const audioChunksRef = useRef([]);
+    const maxRecordTimerRef = useRef(null);
 
-    const isButtonDisabled = !uploaded || loading || (!question.trim() && !interimTranscript.trim() && !finalTranscriptRef.current.trim());
+    const isButtonDisabled = !uploaded || loading || isRecording || !question.trim();
 
-    const stopRecording = useCallback(() => {
-        if (recognitionRef.current) {
-            try {
-                recognitionRef.current.stop();
-            } catch (e) {
-                // ignore
-            }
+    const cleanupMedia = useCallback(() => {
+        if (maxRecordTimerRef.current) {
+            clearTimeout(maxRecordTimerRef.current);
+            maxRecordTimerRef.current = null;
         }
-        setIsRecording(false);
-        if (silenceTimerRef.current) {
-            clearTimeout(silenceTimerRef.current);
-            silenceTimerRef.current = null;
+        if (mediaStreamRef.current) {
+            mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+            mediaStreamRef.current = null;
         }
     }, []);
 
-    useEffect(() => {
-        return () => stopRecording();
-    }, [stopRecording]);
+    useEffect(() => () => cleanupMedia(), [cleanupMedia]);
 
-    const displayValue = isRecording ? finalTranscriptRef.current + interimTranscript : question;
-
-    const submitQuery = useCallback((textToSubmit) => {
-        if (!textToSubmit.trim()) return;
-        stopRecording();
+    const submitQuery = useCallback((textToSubmit, detectedLang = null) => {
+        if (!textToSubmit || !textToSubmit.trim()) return;
         setVoiceStatus(null);
-        finalTranscriptRef.current = '';
-        setInterimTranscript('');
         setQuestion('');
-        onSubmit(textToSubmit);
-    }, [stopRecording, onSubmit, setQuestion]);
+        onSubmit(textToSubmit.trim(), detectedLang);
+    }, [onSubmit, setQuestion]);
 
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && !isButtonDisabled) {
-            submitQuery(displayValue);
+            submitQuery(question);
         }
     };
 
-    const startRecording = useCallback(() => {
-        setVoiceError(null);
-        finalTranscriptRef.current = '';
-        setInterimTranscript('');
-        setQuestion('');
-
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            setVoiceError("Voice input works best in Chrome or Edge");
-            setVoiceStatus('error');
-            setTimeout(() => { setVoiceStatus(null); setVoiceError(null); }, 4000);
-            return;
+    const stopRecordingAndTranscribe = useCallback(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            try { mediaRecorderRef.current.stop(); } catch (e) {}
         }
+        setIsRecording(false);
+    }, []);
 
-        const recognition = new SpeechRecognition();
-        recognitionRef.current = recognition;
-
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.language = speakingLang.code;
-
-        const startSilenceTimer = (currentFullText) => {
-            if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-            silenceTimerRef.current = setTimeout(() => {
-                if (currentFullText.trim().length > 0) {
-                    stopRecording();
-                    submitQuery(currentFullText);
-                } else {
-                    stopRecording();
-                    setVoiceStatus(null);
-                }
-            }, 4500);
-        };
-
-        recognition.onstart = () => {
-            setIsRecording(true);
-            setVoiceStatus('listening');
-            startSilenceTimer('');
-        };
-
-        recognition.onresult = (event) => {
-            let interim = '';
-            let finalPart = '';
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-                const transcript = event.results[i][0].transcript;
-                if (event.results[i].isFinal) {
-                    finalPart += transcript + ' ';
-                } else {
-                    interim += transcript;
-                }
-            }
-            if (finalPart) {
-                finalTranscriptRef.current += finalPart;
-            }
-            const currentFullText = finalTranscriptRef.current + interim;
-            setInterimTranscript(interim);
-            setQuestion(currentFullText);
-            startSilenceTimer(currentFullText);
-        };
-
-        recognition.onerror = (event) => {
-            console.error('Speech recognition error', event.error);
-            if (event.error !== 'no-speech') {
-                setVoiceError(event.error === 'not-allowed' ? 'Microphone access denied.' : event.error);
-                setVoiceStatus('error');
-                setTimeout(() => { setVoiceStatus(null); setVoiceError(null); }, 4000);
-            }
-            stopRecording();
-            setVoiceStatus(null);
-        };
-
-        recognition.onend = () => {
-            setIsRecording(false);
-            setVoiceStatus((prev) => prev === 'listening' ? null : prev);
-        };
+    const startRecording = useCallback(async () => {
+        setVoiceError(null);
+        setDetectedBadge(null);
+        audioChunksRef.current = [];
 
         try {
-            recognition.start();
-        } catch (e) {
-            console.error('Failed to start recognition', e);
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaStreamRef.current = stream;
+
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                ? 'audio/webm;codecs=opus'
+                : MediaRecorder.isTypeSupported('audio/webm')
+                    ? 'audio/webm'
+                    : '';
+
+            const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+            mediaRecorderRef.current = recorder;
+
+            recorder.ondataavailable = (event) => {
+                if (event.data && event.data.size > 0) audioChunksRef.current.push(event.data);
+            };
+
+            recorder.onstop = async () => {
+                cleanupMedia();
+                const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+                if (audioBlob.size < 1000) {
+                    setVoiceStatus(null);
+                    return;
+                }
+
+                setVoiceStatus('processing');
+                try {
+                    const formData = new FormData();
+                    formData.append('audio', audioBlob, 'voice.webm');
+
+                    let res = await fetch(`${AI_CORE_URL}/transcribe`, { method: 'POST', body: formData });
+                    if (res.status === 404) {
+                        res = await fetch(`${AI_CORE_URL}/api/transcribe`, { method: 'POST', body: formData });
+                    }
+
+                    const data = await res.json();
+                    if (!res.ok || !data.text) throw new Error(data.error || 'Transcription failed');
+
+                    const transcript = data.text.trim();
+                    const lang = data.language || 'en';
+                    setDetectedBadge(lang);
+                    setQuestion(transcript);
+                    submitQuery(transcript, lang);
+                } catch (err) {
+                    setVoiceError(err.message || 'Voice transcription failed');
+                    setVoiceStatus('error');
+                    setTimeout(() => { setVoiceStatus(null); setVoiceError(null); }, 4000);
+                }
+            };
+
+            recorder.start();
+            setIsRecording(true);
+            setVoiceStatus('listening');
+            maxRecordTimerRef.current = setTimeout(() => stopRecordingAndTranscribe(), 12000);
+        } catch (err) {
+            setVoiceError(err.name === 'NotAllowedError' ? 'Microphone access denied.' : 'Microphone unavailable.');
+            setVoiceStatus('error');
+            setTimeout(() => { setVoiceStatus(null); setVoiceError(null); }, 4000);
         }
-    }, [setQuestion, stopRecording, submitQuery, speakingLang]);
+    }, [cleanupMedia, setQuestion, stopRecordingAndTranscribe, submitQuery]);
 
     const toggleRecording = () => {
-        if (isRecording) {
-            stopRecording();
-            if (displayValue.trim().length > 0) {
-                submitQuery(displayValue);
-            } else {
-                setVoiceStatus(null);
-            }
-        } else {
-            startRecording();
-        }
+        if (isRecording) stopRecordingAndTranscribe();
+        else startRecording();
     };
 
-    let computedPlaceholder = "Ask a question about your data...";
-    if (voiceStatus === 'listening') {
-        computedPlaceholder = `Listening in ${speakingLang.label}...`;
-    } else if (voiceStatus === 'processing' || loading) {
-        computedPlaceholder = "Analyzing your data...";
-    }
+    let placeholder = 'Query dataset in English, Hindi, or Bengali...';
+    if (!uploaded) placeholder = 'Upload a CSV file to enable querying...';
+    else if (voiceStatus === 'listening') placeholder = 'Recording audio (auto-detecting language)... Click stop when finished';
+    else if (voiceStatus === 'processing' || loading) placeholder = 'Executing query...';
 
     return (
-        <Card className={`relative transition-all duration-300 ${!uploaded ? 'opacity-60' : ''}`}>
-            {!uploaded && (
-                <div className="absolute inset-0 bg-background/60 z-10 rounded-2xl flex items-center justify-center backdrop-blur-[2px]">
-                    <div className="flex items-center space-x-2 text-gray-400 bg-surface px-4 py-2 rounded-full shadow-sm border border-accent/10">
-                        <Lock className="w-4 h-4" />
-                        <span className="text-sm font-medium">Upload a dataset first</span>
-                    </div>
+        <div
+            style={{
+                backgroundColor: 'var(--dt-surface)',
+                borderColor: 'var(--dt-border)',
+                borderRadius: 'var(--dt-radius)'
+            }}
+            className="border p-4"
+        >
+            {/* Input Bar */}
+            <div
+                style={{
+                    backgroundColor: 'var(--dt-bg)',
+                    borderColor: isRecording ? '#ef4444' : 'var(--dt-border-strong)',
+                    borderRadius: 'var(--dt-radius)'
+                }}
+                className="flex items-center border px-3 py-2 gap-2.5 transition-colors"
+            >
+                <Terminal size={15} style={{ color: 'var(--dt-text-faint)' }} className="shrink-0" />
+
+                <input
+                    id="query-input"
+                    type="text"
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    disabled={!uploaded || loading || isRecording || voiceStatus === 'processing'}
+                    placeholder={placeholder}
+                    style={{ color: 'var(--dt-text)' }}
+                    className="w-full bg-transparent text-sm focus:outline-none placeholder:text-zinc-500 disabled:opacity-50"
+                />
+
+                {/* Language Status Pill */}
+                <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+                    {detectedBadge && (
+                        <span
+                            style={{
+                                backgroundColor: 'var(--dt-accent-soft)',
+                                color: 'var(--dt-accent)',
+                                borderRadius: 'var(--dt-radius)'
+                            }}
+                            className="px-2 py-0.5 text-[10px] font-mono font-semibold"
+                        >
+                            DETECTED: {LANG_LABELS[detectedBadge] || 'EN'}
+                        </span>
+                    )}
+                    <span
+                        style={{
+                            backgroundColor: 'var(--dt-surface-2)',
+                            color: 'var(--dt-text-faint)',
+                            borderColor: 'var(--dt-border)',
+                            borderRadius: 'var(--dt-radius)'
+                        }}
+                        className="px-2 py-0.5 text-[10px] font-mono border"
+                        title="Supported voice & text languages: English, Hindi, Bengali"
+                    >
+                        EN · HI · BN
+                    </span>
+                </div>
+
+                {/* Single Auto-Detect Mic Button */}
+                <button
+                    type="button"
+                    onClick={toggleRecording}
+                    disabled={!uploaded || loading || voiceStatus === 'processing'}
+                    style={{
+                        backgroundColor: isRecording ? 'rgba(239,68,68,0.15)' : 'var(--dt-surface-2)',
+                        color: isRecording ? '#ef4444' : 'var(--dt-text-muted)',
+                        borderColor: isRecording ? '#ef4444' : 'var(--dt-border)',
+                        borderRadius: 'var(--dt-radius)'
+                    }}
+                    className="p-2 border transition-colors hover:opacity-90 disabled:opacity-40 shrink-0"
+                    title={isRecording ? 'Stop recording & transcribe' : 'Speak in English, Hindi, or Bengali'}
+                >
+                    {voiceStatus === 'processing' ? (
+                        <Loader size={14} className="animate-spin" />
+                    ) : isRecording ? (
+                        <Square size={14} className="fill-current" />
+                    ) : (
+                        <Mic size={14} />
+                    )}
+                </button>
+
+                {/* Run Query Button */}
+                <button
+                    type="button"
+                    onClick={() => submitQuery(question)}
+                    disabled={isButtonDisabled}
+                    style={{
+                        backgroundColor: isButtonDisabled ? 'var(--dt-surface-2)' : 'var(--dt-accent)',
+                        color: isButtonDisabled ? 'var(--dt-text-faint)' : 'var(--dt-accent-text)',
+                        borderRadius: 'var(--dt-radius)'
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-mono font-semibold transition-opacity disabled:cursor-not-allowed shrink-0"
+                >
+                    {loading ? <Loader size={13} className="animate-spin" /> : <><span>RUN</span><CornerDownLeft size={12} /></>}
+                </button>
+            </div>
+
+            {/* Error or Quick Sample Queries */}
+            {voiceError ? (
+                <p className="text-xs text-red-400 font-mono mt-2">{voiceError}</p>
+            ) : uploaded && (
+                <div className="flex items-center gap-1.5 mt-2.5 overflow-x-auto pb-0.5">
+                    <span style={{ color: 'var(--dt-text-faint)' }} className="text-[10px] font-mono uppercase shrink-0 mr-1">
+                        Try:
+                    </span>
+                    {QUICK_PROMPTS.map((q) => (
+                        <button
+                            key={q}
+                            type="button"
+                            disabled={loading || isRecording}
+                            onClick={() => submitQuery(q)}
+                            style={{
+                                backgroundColor: 'var(--dt-surface-2)',
+                                borderColor: 'var(--dt-border)',
+                                color: 'var(--dt-text-muted)',
+                                borderRadius: 'var(--dt-radius)'
+                            }}
+                            className="px-2 py-0.5 text-[11px] border hover:opacity-80 transition-opacity whitespace-nowrap shrink-0"
+                        >
+                            {q}
+                        </button>
+                    ))}
                 </div>
             )}
-
-            <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                    <div className={`step-circle ${!uploaded ? 'inactive' : 'active'}`}>2</div>
-                    <div>
-                        <h3 className="text-sm font-bold text-gray-200">Ask a Question</h3>
-                        <p className="text-xs text-gray-500">Type or speak in any language</p>
-                    </div>
-                </div>
-
-                {/* Voice Language Toggle */}
-                <div className="relative">
-                    <button
-                        onClick={() => setShowLangMenu(!showLangMenu)}
-                        className="flex items-center space-x-1.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-gray-200 px-2.5 py-1 rounded-lg border border-white/10 transition-colors text-[10px] font-bold uppercase tracking-wider"
-                    >
-                        <span>{speakingLang.flag}</span>
-                        <span>{speakingLang.id}</span>
-                        <ChevronDown className={`w-3 h-3 transition-transform ${showLangMenu ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {showLangMenu && (
-                        <>
-                            <div className="fixed inset-0 z-10" onClick={() => setShowLangMenu(false)} />
-                            <div className="absolute right-0 mt-1 w-32 bg-[#1a1a1c] border border-white/10 rounded-lg shadow-2xl z-20 overflow-hidden py-1 animate-zoom-in">
-                                {LANGUAGES.map((lang) => (
-                                    <button
-                                        key={lang.id}
-                                        onClick={() => {
-                                            setSpeakingLang(lang);
-                                            setShowLangMenu(false);
-                                        }}
-                                        className={`w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-medium transition-colors hover:bg-white/5
-                                            ${speakingLang.id === lang.id ? 'text-accent bg-accent/5' : 'text-gray-400'}
-                                        `}
-                                    >
-                                        <div className="flex items-center space-x-2">
-                                            <span>{lang.flag}</span>
-                                            <span>{lang.label}</span>
-                                        </div>
-                                        {speakingLang.id === lang.id && <Check className="w-3 h-3" />}
-                                    </button>
-                                ))}
-                            </div>
-                        </>
-                    )}
-                </div>
-            </div>
-
-            <div className="flex flex-col">
-                {voiceStatus && voiceStatus !== 'listening' && (
-                    <div className={`mb-3 px-3 py-2 rounded-lg text-xs font-medium flex items-center space-x-2 animate-fade-in ${voiceStatus === 'processing' ? 'bg-yellow-900/30 text-yellow-400' :
-                        voiceStatus === 'success' ? 'bg-accent/10 text-accent' :
-                            'bg-red-900/30 text-red-400'
-                        }`}>
-                        {voiceStatus === 'processing' && (
-                            <>
-                                <Loader className="w-3 h-3 animate-spin" />
-                                <span>Processing...</span>
-                            </>
-                        )}
-                        {voiceStatus === 'error' && (
-                            <span>{voiceError || 'Voice error'}</span>
-                        )}
-                    </div>
-                )}
-
-                <div className="relative flex items-center w-full">
-                    <input
-                        id="query-input"
-                        type="text"
-                        value={displayValue}
-                        onChange={(e) => {
-                            setQuestion(e.target.value);
-                            if (silenceTimerRef.current) {
-                                clearTimeout(silenceTimerRef.current);
-                            }
-                        }}
-                        onKeyDown={handleKeyDown}
-                        disabled={!uploaded || loading || isRecording}
-                        placeholder={computedPlaceholder}
-                        className="w-full pl-4 pr-[11rem] py-3.5 rounded-xl border border-white/5 bg-[#141416] focus:outline-none focus:ring-1 focus:ring-accent/40 focus:border-accent/50 text-gray-200 shadow-sm transition-all text-sm placeholder:text-gray-500 font-medium disabled:opacity-80"
-                    />
-
-                    <div className="absolute right-1.5 flex items-center gap-2">
-                        {isRecording && !loading && (
-                            <div className="flex items-center justify-center gap-[2px] h-6 px-1 pr-2">
-                                <div className="w-1 bg-accent rounded-full animate-wave-bars h-3" style={{ animationDelay: '0ms' }} />
-                                <div className="w-1 bg-accent rounded-full animate-wave-bars h-5" style={{ animationDelay: '150ms' }} />
-                                <div className="w-1 bg-accent rounded-full animate-wave-bars h-3" style={{ animationDelay: '300ms' }} />
-                                <div className="w-1 bg-accent rounded-full animate-wave-bars h-6" style={{ animationDelay: '450ms' }} />
-                            </div>
-                        )}
-
-                        <div className="relative flex items-center justify-center min-w-[36px]">
-                            {loading || voiceStatus === 'processing' ? (
-                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                    <span className="relative flex h-5 w-5">
-                                        <span className="animate-ripple absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-5 w-5 bg-accent/20 flex items-center justify-center border border-accent/50">
-                                            <Loader className="w-3 h-3 text-accent animate-spin" />
-                                        </span>
-                                    </span>
-                                </div>
-                            ) : (
-                                <button
-                                    onClick={toggleRecording}
-                                    disabled={!uploaded || loading}
-                                    className={`p-2 rounded-lg transition-all duration-200 z-10 ${isRecording
-                                        ? 'bg-accent/20 text-accent ring-1 ring-accent/50 shadow-[0_0_15px_rgba(181,255,125,0.4)]'
-                                        : uploaded
-                                            ? 'text-gray-500 hover:text-accent hover:bg-accent/10'
-                                            : 'text-gray-700 cursor-not-allowed'
-                                        }`}
-                                    title={`Start voice input in ${speakingLang.label}`}
-                                >
-                                    {isRecording ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-                                </button>
-                            )}
-                        </div>
-
-                        <button
-                            onClick={() => submitQuery(displayValue)}
-                            disabled={isButtonDisabled}
-                            className={`flex items-center justify-center px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-200 z-10
-                                ${isButtonDisabled
-                                    ? 'bg-gray-800 cursor-not-allowed text-gray-600'
-                                    : 'bg-gradient-to-r from-accent to-accent-dim text-background hover:shadow-md hover:shadow-accent/20 active:scale-95'
-                                }`}
-                        >
-                            <span className="mr-1.5">Ask</span>
-                            <Send className="w-3.5 h-3.5" />
-                        </button>
-                    </div>
-                </div>
-
-                <div className="flex items-center justify-between mt-2 px-1">
-                    <p className="text-[10px] text-gray-600">
-                        Powered by Azure OpenAI · Read-only queries safely executed
-                    </p>
-                </div>
-            </div>
-        </Card>
+        </div>
     );
 };
 
