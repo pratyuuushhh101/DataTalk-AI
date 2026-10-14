@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { IndianRupee, TrendingUp, Percent, Award } from 'lucide-react';
+import { IndianRupee, TrendingUp, Percent, Award, Calendar, Hash } from 'lucide-react';
 import Card from './Card';
 
 const ICON_MAP = {
@@ -13,6 +13,8 @@ const ICON_MAP = {
     profit: <TrendingUp className="w-5 h-5" />,
     total: <IndianRupee className="w-5 h-5" />,
     amount: <IndianRupee className="w-5 h-5" />,
+    year: <Calendar className="w-5 h-5" />,
+    id: <Hash className="w-5 h-5" />
 };
 
 const GRADIENT_BORDERS = [
@@ -30,11 +32,14 @@ const getIcon = (key) => {
     return <TrendingUp className="w-5 h-5" />;
 };
 
-const formatLargeNumber = (num) => {
+const formatLargeNumber = (num, isAveraged = false) => {
+    if (isNaN(num)) return '0';
+    if (isAveraged || Math.abs(num) < 1000) {
+        return num % 1 !== 0 ? num.toFixed(2) : num.toLocaleString();
+    }
     if (Math.abs(num) >= 1e9) return (num / 1e9).toFixed(1) + 'B';
     if (Math.abs(num) >= 1e6) return (num / 1e6).toFixed(1) + 'M';
     if (Math.abs(num) >= 1e3) return (num / 1e3).toFixed(1) + 'K';
-    if (num % 1 !== 0) return num.toFixed(2);
     return num.toLocaleString();
 };
 
@@ -63,7 +68,7 @@ const AnimatedNumber = ({ value, formattedValue }) => {
                 setDisplayVal(formattedValue);
                 clearInterval(timer);
             } else {
-                setDisplayVal(formatLargeNumber(currentNum));
+                setDisplayVal(formatLargeNumber(currentNum, false));
             }
         }, stepDuration);
 
@@ -83,14 +88,25 @@ const KpiCards = ({ data }) => {
         if (numericKeys.length === 0) return [];
 
         return numericKeys.map(key => {
-            const sum = data.reduce((acc, row) => acc + (Number(row[key]) || 0), 0);
-            const formatted = formatLargeNumber(sum);
+            const lowerKey = key.toLowerCase();
+            const isYearOrRate = lowerKey.includes('year') || lowerKey.includes('rate') || lowerKey.includes('pct') || lowerKey.includes('percentage');
+            
+            let finalVal;
+            if (isYearOrRate && data.length > 0) {
+                // Average out years or percentages instead of summing them up
+                const total = data.reduce((acc, row) => acc + (Number(row[key]) || 0), 0);
+                finalVal = total / data.length;
+            } else {
+                finalVal = data.reduce((acc, row) => acc + (Number(row[key]) || 0), 0);
+            }
+
+            const formatted = formatLargeNumber(finalVal, isYearOrRate);
             const title = key.replace(/_/g, ' ').toUpperCase();
 
             return {
                 id: key,
                 title,
-                value: sum,
+                value: finalVal,
                 formattedValue: formatted,
                 icon: getIcon(key)
             };

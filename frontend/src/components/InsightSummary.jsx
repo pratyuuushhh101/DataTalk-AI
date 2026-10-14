@@ -8,7 +8,6 @@ const LANGUAGES = [
     { code: 'bn', label: 'Bengali', flag: '🇮🇳' }
 ];
 
-/** Detect what language a block of text likely is */
 const detectLanguage = (text) => {
     if (!text) return 'en';
     const hindiRegex = /[\u0900-\u097F]/;
@@ -18,19 +17,20 @@ const detectLanguage = (text) => {
     return 'en';
 };
 
-/** Parse raw markdown-formatted text into clean readable lines */
 const formatInsightText = (text) => {
     if (!text) return [];
 
     return text
         .split(/\n/)
         .map(l => l.trim())
-        .filter(l => l.length > 0 && l !== '---') // Skip horizontal lines
+        .filter(l => l.length > 0 && l !== '---')
         .map(line => {
+            // Only strip if line is an explicit markdown title heading
+            if (/^#{1,4}\s*(english|hindi|bengali)/i.test(line)) return null;
+
             line = line.replace(/^#{1,4}\s*/, '');
             line = line.replace(/^Part\s*\d+\s*[:\-–]\s*/i, '');
             line = line.replace(/^Insight\s+in\s+\w+\s*[:\-–]?\s*/i, '');
-            line = line.replace(/^\*{0,2}\s*(English|Hindi|Kannada|Bengali)\s*\*{0,2}\s*[:\-–]?\s*$/i, '');
             line = line.trim();
             if (!line) return null;
 
@@ -51,8 +51,7 @@ const extractSections = (rawInsight) => {
     const sections = { en: [], hi: [], bn: [] };
     const rawBlocks = rawInsight.replace(/\r/g, '').split(/\n/);
 
-    let currentLang = 'en'; // default
-    let hasExplicitHeader = false;
+    let currentLang = 'en';
 
     for (let line of rawBlocks) {
         const lineTrim = line.trim();
@@ -60,14 +59,13 @@ const extractSections = (rawInsight) => {
 
         const lower = lineTrim.toLowerCase();
 
-        // Catch headers like "### ENGLISH", "ENGLISH INSIGHT", "**HINDI**"
-        if (lower.includes('english') && lineTrim.length <= 35) { currentLang = 'en'; hasExplicitHeader = true; continue; }
-        if (lower.includes('hindi') && lineTrim.length <= 35) { currentLang = 'hi'; hasExplicitHeader = true; continue; }
-        if (lower.includes('bengali') && lineTrim.length <= 35) { currentLang = 'bn'; hasExplicitHeader = true; continue; }
+        // Use strict regex for section header markers
+        if (/^#{1,4}\s*english/i.test(lineTrim) || lower === '**english**' || lower === 'english:') { currentLang = 'en'; continue; }
+        if (/^#{1,4}\s*hindi/i.test(lineTrim) || lower === '**hindi**' || lower === 'hindi:') { currentLang = 'hi'; continue; }
+        if (/^#{1,4}\s*bengali/i.test(lineTrim) || lower === '**bengali**' || lower === 'bengali:') { currentLang = 'bn'; continue; }
 
-        // Script-based detection if we haven't hit a header or if script changes
         const detected = detectLanguage(lineTrim);
-        if (detected !== 'en' && (!hasExplicitHeader || detected !== currentLang)) {
+        if (detected !== 'en' && detected !== currentLang) {
             currentLang = detected;
         }
 
@@ -81,7 +79,6 @@ const extractSections = (rawInsight) => {
     };
 };
 
-/** Render bold markdown within a line */
 const RenderLine = ({ text }) => {
     if (!text) return null;
     const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -103,7 +100,6 @@ const InsightSummary = ({ insight, questionLanguage }) => {
     const [showSelector, setShowSelector] = useState(false);
     const [lastInsight, setLastInsight] = useState('');
 
-    // Effect to set initial language based on question or content
     useEffect(() => {
         if (insight && insight !== lastInsight) {
             setLastInsight(insight);
@@ -127,7 +123,6 @@ const InsightSummary = ({ insight, questionLanguage }) => {
 
     return (
         <Card className="mb-6 bg-gradient-to-br from-accent/5 via-card-bg to-accent/3 border-accent/15 animate-fade-in-up animate-glow-pulse overflow-visible relative">
-            {/* Header */}
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center space-x-2.5">
                     <div className="bg-accent/10 p-2 rounded-xl shadow-sm shadow-accent/10">
@@ -141,7 +136,6 @@ const InsightSummary = ({ insight, questionLanguage }) => {
                     </div>
                 </div>
 
-                {/* Inline Language Selector */}
                 <div className="relative">
                     <button
                         onClick={() => setShowSelector(!showSelector)}
@@ -183,14 +177,14 @@ const InsightSummary = ({ insight, questionLanguage }) => {
                 </div>
             </div>
 
-            {/* Insight Content */}
             <div className="space-y-2.5 animate-fade-in" key={activeLang}>
                 {lines.length > 0 ? (
                     lines.map((line, idx) => (
                         <div
                             key={idx}
-                            className={`text-[14px] leading-relaxed text-gray-300 ${line.isBullet ? 'flex items-start space-x-2 pl-2' : ''
-                                }`}
+                            className={`text-[14px] leading-relaxed text-gray-300 ${
+                                line.isBullet ? 'flex items-start space-x-2 pl-2' : ''
+                            }`}
                             style={{ animationDelay: `${idx * 30}ms` }}
                         >
                             {line.isBullet && (

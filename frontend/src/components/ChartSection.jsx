@@ -18,7 +18,6 @@ const CHART_OPTIONS = [
 const ChartSection = ({ data }) => {
     const [chartType, setChartType] = useState('bar');
 
-    // Auto-select pie if the data comes in perfectly formatted for it, else default to 'bar', but don't force it continuously
     useEffect(() => {
         if (!data || data.length === 0) return;
         const keys = Object.keys(data[0]);
@@ -49,11 +48,13 @@ const ChartSection = ({ data }) => {
             xAxisKey = temporalKeys[0];
         } else if (categoricalKeys.length > 0) {
             xAxisKey = categoricalKeys[0];
-        } else if (data.length > 1) {
+        } else if (data.length === 1) {
+            // Fallback for single aggregate queries (e.g., SELECT SUM(revenue) FROM sales)
+            processedData = [{ label: 'Result', ...data[0] }];
+            xAxisKey = 'label';
+        } else {
             processedData = data.map((d, i) => ({ ...d, index: `Row ${i + 1}` }));
             xAxisKey = 'index';
-        } else {
-            return null;
         }
 
         const yAxisKeys = numericKeys.slice(0, 2);
@@ -82,16 +83,16 @@ const ChartSection = ({ data }) => {
             <div className="flex items-center justify-between mb-5">
                 <h3 className="text-base font-bold text-gray-100">Data Visualization</h3>
 
-                {/* Chart Type Selector */}
                 <div className="flex bg-[#0f0f11] p-1 rounded-lg border border-white/5 shadow-inner">
                     {CHART_OPTIONS.map(option => (
                         <button
                             key={option.id}
                             onClick={() => setChartType(option.id)}
-                            className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${chartType === option.id
+                            className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
+                                chartType === option.id
                                     ? 'bg-accent/20 text-accent shadow-sm'
                                     : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
-                                }`}
+                            }`}
                         >
                             {option.icon}
                             <span>{option.label}</span>
@@ -102,7 +103,7 @@ const ChartSection = ({ data }) => {
 
             <div className="h-80 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                    {chartType === 'pie' ? (
+                    {chartType === 'pie' && chartConfig.processedData.length > 1 ? (
                         <PieChart>
                             <Pie
                                 data={chartConfig.processedData}
