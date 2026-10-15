@@ -1,0 +1,585 @@
+================================================================================
+                    DATATALK-AI — PRODUCTION READINESS AUDIT
+          Senior Software Engineer & High-Level Product Manager Assessment
+                         Target Path: datatalk-ai
+                       Audit Date: October 13, 2026
+================================================================================
+
+TABLE OF CONTENTS
+─────────────────
+  1. EXECUTIVE SUMMARY
+  2. STEP-BY-STEP GUIDE: HOW TO RUN THE ENTIRE PROJECT
+  3. WHAT WORKS (Verified Functional Modules)
+  4. WHAT DOES NOT WORK (Broken Parts & Critical Bugs)
+  5. WHAT IT LACKS & GAPS (Security, Architecture, Stubbed UI)
+  6. CODE QUALITY & TECHNICAL DEBT AUDIT
+  7. SENIOR SWE & PM ROADMAP TO REACH PRODUCTION LEVEL
+
+
+================================================================================
+1. EXECUTIVE SUMMARY
+================================================================================
+
+DataTalk-AI is envisioned as an ambient AI retail intelligence copilot for 
+Indian Kirana stores. It bridges physical retail operations (computer vision 
+shelf monitoring, multilingual voice inputs, and WhatsApp queries) with modern 
+financial analytics and automated inventory replenishment.
+
+ARCHITECTURE REALITY:
+The project is a 3-tier distributed system:
+  1. Frontend (React 19, Vite 7, Tailwind v4, Recharts, Azure Speech SDK)
+     Running on: http://localhost:5173
+  2. Backend (Node.js ES Modules, Express 5, Azure SQL via mssql, Twilio, Redis)
+     Running on: http://localhost:5000
+  3. AI-Core (Node.js CommonJS, Express 5, Azure OpenAI gpt-4o/o4-mini, Azure Speech)
+     Running on: http://localhost:8000
+  4. Database: Azure SQL / SQL Server (T-SQL syntax)
+
+VERDICT:
+The project is a promising HACKATHON PROTOTYPE, but is currently UNUSABLE in 
+any real-world production deployment. 
+
+While the natural language SQL generation prompt engineering is well-thought-out 
+and the React UI is visually polished with Framer Motion and Recharts, the system 
+suffers from:
+  - 100% broken speech recognition pipeline due to an invalid regex split
+  - Complete failure of Azure OpenAI intent extraction (o4-mini system role rejection)
+  - Severe concurrency locks that freeze the entire server when one user makes a call
+  - Critical security exposures (SSRF, Azure Speech API key leaked in client bundle,
+    disabled TLS certificate verification, completely unauthenticated API endpoints)
+  - Corrupting product normalization heuristics that map unrelated goods to single SKUs
+  - Fake/stubbed UI elements (search inputs and CSV exports that do nothing)
+
+Production Readiness Score: 28 / 100 (Prototype Phase)
+Estimated engineering effort to production MVP: 6 - 8 Weeks (2 Senior Engineers)
+
+
+================================================================================
+2. STEP-BY-STEP GUIDE: HOW TO RUN THE ENTIRE PROJECT
+================================================================================
+
+PREREQUISITES:
+  - Node.js >= 18.x (tested on v20+)
+  - npm >= 9.x
+  - Active Azure SQL Database instance (or local MS SQL Server / Docker mssql)
+  - Azure OpenAI resource with deployments:
+      • Core Model: gpt-4o
+      • Speed Model: o4-mini
+      • Whisper Model: whisper
+  - Azure Cognitive Services Speech Key & Region
+  - Optional for integrations: Twilio WhatsApp sandbox, Redis, Azure Blob Storage
+
+--------------------------------------------------------------------------------
+STEP 1: DATABASE SETUP (Azure SQL / SQL Server)
+--------------------------------------------------------------------------------
+1. Connect to your Azure SQL database using Azure Data Studio, SSMS, or sqlcmd.
+2. Execute the seeder script to initialize the inventory and suppliers tables:
+     $ sqlcmd -S <server>.database.windows.net -d <dbname> -U <user> -P <pass> \
+       -i database/database_seeder.sql
+   (This creates the `inventory` and `suppliers` tables with seed products).
+3. NOTE: The `sales_data` table is auto-created dynamically by the backend on the 
+   first CSV upload. Do NOT run `migrate.js` before `sales_data` exists, or the 
+   migration will throw an error when indexing `sales_data`.
+
+--------------------------------------------------------------------------------
+STEP 2: CONFIGURE & RUN AI-CORE (Port 8000)
+--------------------------------------------------------------------------------
+1. Navigate to the AI-Core directory:
+     $ cd /home/pratz/Desktop/DataTalk-AI/ai-core
+2. Copy the environment configuration:
+     $ cp .env.example .env
+3. Edit `.env` with your Azure credentials:
+     AZURE_OPENAI_KEY=<your_azure_openai_key>
+     AZURE_OPENAI_ENDPOINT=https://<your_resource>.openai.azure.com/
+     AZURE_OPENAI_SPEED_DEPLOYMENT=o4-mini
+     AZURE_OPENAI_CORE_DEPLOYMENT=gpt-4o
+     AZURE_OPENAI_API_VERSION=2025-01-01-preview
+     AZURE_OPENAI_WHISPER_KEY=<your_whisper_key>
+     AZURE_OPENAI_WHISPER_ENDPOINT=https://<your_resource>.openai.azure.com/
+     AZURE_OPENAI_WHISPER_DEPLOYMENT=whisper
+     AZURE_SPEECH_KEY=<your_azure_speech_key>
+     AZURE_SPEECH_REGION=centralindia
+     PORT=8000
+4. Install dependencies:
+     $ npm install
+   (CRITICAL NOTE: `form-data` is missing from ai-core/package.json. Run:
+     $ npm install form-data
+    otherwise speech.service.js will crash on import).
+5. Start the AI-Core service:
+     $ npm start
+   (Uses `node server.js`. AI-Core will boot on http://localhost:8000).
+
+--------------------------------------------------------------------------------
+STEP 3: CONFIGURE & RUN BACKEND (Port 5000)
+--------------------------------------------------------------------------------
+1. Open a new terminal and navigate to the backend directory:
+     $ cd /home/pratz/Desktop/DataTalk-AI/backend
+2. Copy the environment template:
+     $ cp .env.example .env
+3. Fill in the required parameters in `backend/.env`:
+     DB_USER=<your_sql_user>
+     DB_PASSWORD=<your_sql_password>
+     DB_SERVER=<your_sql_server>.database.windows.net
+     DB_NAME=<your_db_name>
+     DB_PORT=1433
+     PORT=5000
+     USE_REDIS=false
+     # Optional credentials for complete functionality:
+     AZURE_STORAGE_CONNECTION_STRING=
+     AZURE_STORAGE_CONTAINER=uploads
+     TWILIO_ACCOUNT_SID=
+     TWILIO_AUTH_TOKEN=
+     TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886
+     SHOPKEEPER_PHONE=
+4. Install dependencies:
+     $ npm install
+5. Launch the backend server:
+     $ node src/server.js
+   (Console will output: "🚀 Server running on port 5000").
+6. Optional: To test SQL insertion manually:
+     $ curl http://localhost:5000/test-insert
+
+--------------------------------------------------------------------------------
+STEP 4: CONFIGURE & RUN FRONTEND (Port 5173)
+--------------------------------------------------------------------------------
+1. Open a third terminal and navigate to the frontend directory:
+     $ cd /home/pratz/Desktop/DataTalk-AI/frontend
+2. Create `frontend/.env` (if not present):
+     VITE_API_URL=http://localhost:5000
+     VITE_AI_CORE_URL=http://localhost:8000
+     VITE_AZURE_SPEECH_KEY=<your_azure_speech_key>
+     VITE_AZURE_SPEECH_REGION=centralindia
+3. Install frontend dependencies:
+     $ npm install
+4. Start the Vite development server:
+     $ npm run dev
+   (Access the application in your browser at http://localhost:5173).
+
+--------------------------------------------------------------------------------
+STEP 5: VERIFY END-TO-END FLOW
+--------------------------------------------------------------------------------
+1. Open http://localhost:5173 in Google Chrome.
+2. Go to the "Upload" section and upload `database/sample_sales_history.csv`.
+   Wait for the confirmation message indicating rows have been inserted into Azure SQL.
+3. Once uploaded, run the database migration to apply normalized indexes:
+     $ cd /home/pratz/Desktop/DataTalk-AI/backend && node migrate.js
+4. Navigate to the "Ask DataTalk" query input.
+5. Type: "What is the total revenue for Maggi?" and press Enter.
+6. Verify the SQL output, table data, and generated insights.
+
+
+================================================================================
+3. WHAT WORKS (Verified Functional Modules)
+================================================================================
+
+1. NATURAL LANGUAGE TO T-SQL QUERY GENERATION (Core Brain):
+   - Files: `ai-core/src/controllers/aiController.js`, `ai-core/src/prompts/sqlPrompt.js`
+   - Structured prompt engineering correctly guides Azure OpenAI (gpt-4o) to 
+     produce compliant Microsoft SQL Server queries.
+   - Enforces T-SQL dialect constraints: replaces `LIMIT`/`OFFSET` with `TOP`,
+     enforces `FORMAT(date, 'MMM yyyy')`, and requires `ISNULL`/`COALESCE`.
+
+2. MULTI-LINGUAL BI INSIGHT SYNTHESIS:
+   - Files: `ai-core/src/prompts/insightPrompt.js`, `backend/src/controllers/nlQuery.controller.js`
+   - Generates structured three-language summaries (English, Hindi, Bengali) with 
+     proper Indian Rupee (`₹`) formatting based on returned SQL recordsets.
+
+3. DYNAMIC RECHARTS VISUALIZATION ADAPTER:
+   - File: `frontend/src/components/ChartSection.jsx`
+   - Automatically analyzes dataset keys from query results, dynamically 
+     detects temporal columns (date/month) and categorical dimensions, and 
+     renders responsive Area, Line, Bar, and Pie charts without manual mapping.
+
+4. ATOMIC SALES TRANSACTION LOGGING:
+   - File: `backend/src/services/sales.service.js`
+   - Implements robust database transactions (`pool.transaction()`, `transaction.begin()`),
+     stock validation checks (`qty > current_stock`), parameterized inputs 
+     (`@product_name`, `@quantity`, `@revenue`), and safe error rollbacks.
+
+5. COMPUTER VISION IOU BOUNDING BOX DEDUPLICATION:
+   - File: `backend/src/services/cv.service.js`
+   - Implements Intersection-over-Union (`computeIoU`) and Non-Maximum Suppression 
+     (`deduplicateDetections`) with a 0.40 IoU threshold and 0.60 confidence score 
+     filter, preventing duplicate counting of overlapping shelf items.
+
+6. REORDER LOCKOUT WITH REDIS TTL:
+   - File: `backend/src/services/reorder.service.js`
+   - Uses `redis.setex` with a 10-minute TTL to prevent rapid reorder loops and 
+     duplicate WhatsApp supplier alert spam when inventory levels cross thresholds.
+
+7. PURE FUNCTION BASKET ANALYSIS SUGGESTION ENGINE:
+   - File: `backend/src/services/basket.service.js`
+   - Deterministic rule engine (`BASKET_RULES`) that evaluates shopping cart 
+     combinations and suggests complementary items (e.g., Maggi -> Sauce/Cheese) 
+     while excluding items already in the basket.
+
+8. RFC 4180 COMPLIANT CSV EXPORT:
+   - File: `frontend/src/components/RawDataTable.jsx`
+   - Escapes quotes (`""`), handles multi-line entries, and properly wraps comma-separated 
+     values in generated client-side file downloads.
+
+9. STANDALONE ZERO-DEPENDENCY DEMO PANEL:
+   - Files: `backend/demo-panel/index.html`, `script.js`, `styles.css`
+   - Clean, lightweight administrative UI with dark-mode styling and syntax-highlighted 
+     JSON response rendering for endpoint verification.
+
+
+================================================================================
+4. WHAT DOES NOT WORK (Broken Parts & Critical Bugs)
+================================================================================
+
+[BUG-01] SPEECH PIPELINE DROPS 100% OF TRANSCRIPTS (CRITICAL)
+  - File: `ai-core/src/services/speechService.js` (Lines 96-101)
+  - Code:
+      const wordCount = finalText.trim().split(/\\s+/).length;
+      if (wordCount < 3) {
+          console.log(`[DROPPED] Transcript too short (< 3 words)`);
+          return;
+      }
+  - Cause: In JavaScript RegExp literals (`/.../`), `\\s+` matches a literal 
+    backslash character `\` followed by one or more `s` characters. It does NOT 
+    match whitespace! Any spoken phrase without backslashes returns an array of 
+    length 1. Since `1 < 3` is always true, EVERY speech transcript is silently 
+    dropped. The voice interface is completely non-functional.
+  - Fix: Change regex to standard whitespace pattern: `.split(/\s+/)`.
+
+[BUG-02] AZURE OPENAI 'o4-mini' REJECTS SYSTEM PROMPTS (CRITICAL)
+  - Files: `ai-core/src/services/aiService.js` (Line 93), `ai-core/src/controllers/aiController.js`
+  - Cause: The `extractJSONFromSpeedEngine` function calls deployment `o4-mini` 
+    with `{ role: "system", content: systemPrompt }`. Azure's o-series reasoning 
+    models reject the `system` role with an HTTP 400 Bad Request error.
+  - Evidence: All 5 test runs (`ai-core/result1.json` through `result5.json`) failed 
+    with: `{"error":"Failed to extract message."}`.
+  - Fix: Change role to `"developer"` or fold system instructions into the `"user"` prompt.
+
+[BUG-03] GLOBAL SINGLETON RUNTIME LOCK BLOCKS ALL CONCURRENT USERS (CRITICAL)
+  - Files: `backend/src/controllers/voiceSession.controller.js` (Lines 7-8, 38-43)
+           `backend/src/services/transaction.service.js` (Lines 24-35)
+  - Code:
+      let processing = false;
+      ...
+      if (processing) {
+          return res.json({ status: "busy", message: "Processing previous command." });
+      }
+  - Cause: Module-scoped booleans lock the entire Node.js server. If User A triggers 
+    a voice transaction that takes 10-20 seconds for upstream Azure calls, EVERY 
+    OTHER USER across the entire system is instantly rejected with `{ status: "busy" }`.
+  - Fix: Eliminate global booleans; use per-session locks keyed by tenant or terminal ID.
+
+[BUG-04] GREEDY SUBSTRING MATCH CORRUPTS PRODUCT NORMALIZATION (CRITICAL)
+  - File: `backend/src/utils/normalization.js` (Lines 18-42)
+  - Code:
+      const PHONETIC_MAP = { "oil": "fortunesunfloweroil1l", "tea": "redlabeltea250g", ... };
+      for (const [variant, canonical] of Object.entries(PHONETIC_MAP)) {
+          if (normalized.includes(variant)) return canonical;
+      }
+  - Cause: Using `.includes()` on common substrings causes massive misclassifications:
+      • "coconutoil", "mustardoil", "boil"  -> converted to "fortunesunfloweroil1l"
+      • "greentea", "steak", "protean"      -> converted to "redlabeltea250g"
+      • "rocksalt", "basalt"                -> converted to "tatasalt1kg"
+  - Fix: Replace substring matching with exact word boundary regexes (`\bvariant\b`).
+
+[BUG-05] UN-ATOMIC CSV INSERTION CORRUPTS DATABASE ON FAILURE (HIGH)
+  - File: `backend/src/controllers/upload.controller.js` (Lines 80-128)
+  - Cause: Rows from uploaded CSVs are inserted in a sequential `for` loop without 
+    a wrapping `pool.transaction()`. If row 80 out of 100 fails validation or encounters 
+    a connection blip, rows 1-79 remain permanently committed. The API returns an 
+    HTTP 400 error while leaving the database in a partially loaded, corrupted state.
+  - Fix: Wrap the entire insertion loop in `pool.transaction()` with rollback on error.
+
+[BUG-06] DATE PARSING INVERTS DAYS AND MONTHS ON INDIAN FORMATS (HIGH)
+  - File: `backend/src/controllers/upload.controller.js` (Lines 88-100)
+  - Cause: For Indian `DD/MM/YYYY` dates (e.g., `05/06/2024` for June 5th), V8's 
+    `new Date("05/06/2024")` parses it as May 6th (US `MM/DD/YYYY`). Because it is a 
+    valid date, `!isNaN(d.getTime())` is true and the fallback regex is bypassed.
+    Financial and sales data dates are silently swapped in the database.
+  - Fix: Explicitly check for `DD/MM/YYYY` patterns before passing to `new Date()`.
+
+[BUG-07] MISSING SQL COLUMN 'product_normalized' IN DATABASE SEEDER (HIGH)
+  - Files: `database/database_seeder.sql`, `backend/migrate.js`
+  - Cause: `database_seeder.sql` creates `inventory` and `suppliers` without the 
+    `product_normalized` column. If queries run before `migrate.js` is executed, 
+    Azure SQL throws: `Invalid column name 'product_normalized'`.
+  - Fix: Add `product_normalized` directly into the base table DDL in `database_seeder.sql`.
+
+[BUG-08] INFINITE RECONNECT LOOP FLOODS AZURE SPEECH ENDPOINTS (HIGH)
+  - File: `frontend/src/services/speech.service.js` (Lines 36-54)
+  - Cause: When Azure Speech encounters an authentication, quota, or network error, 
+    `recognizer.canceled` triggers and unconditionally sets a 2-second timeout to 
+    call `startContinuousRecognitionAsync()` again. This causes an infinite loop 
+    every 2 seconds, leaking memory and spamming Azure endpoints indefinitely.
+  - Fix: Implement maximum retry caps and exponential backoff; abort on auth errors.
+
+[BUG-09] AUDIO STREAM AND MICROPHONE HARDWARE LEAK (MEDIUM)
+  - File: `frontend/src/services/speech.service.js` (Lines 93-97)
+  - Cause: `stopTranscription` calls `stopContinuousRecognitionAsync()` but NEVER 
+    invokes `recognizer.close()`. The browser microphone hardware indicator remains on, 
+    and WebRTC audio contexts leak across sessions.
+  - Fix: Invoke `recognizer.close()` inside the completion callback of stop.
+
+[BUG-10] CAMERA SWITCHING RENDERS BLANK VIDEO FEED (MEDIUM)
+  - File: `frontend/src/pages/MatchingDashboard.jsx` (Lines 120-145, 511-523)
+  - Cause: When switching from IP Camera to physical webcam, the `<video>` element 
+    is unmounted in the DOM. When `handleCameraChange` runs, `videoRef.current` is null. 
+    The stream is requested but never attached, leaving the video element black.
+  - Fix: Maintain video element mounting or attach stream in a `useEffect` on `selectedDeviceId`.
+
+[BUG-11] BLIND SUMMATION IN KPI CARDS CREATES NONSENSICAL DATA (MEDIUM)
+  - File: `frontend/src/components/KpiCards.jsx` (Lines 85-97)
+  - Cause: The component iterates over all numeric keys and executes `.reduce((acc, row) => acc + val)`. 
+    When queries return rate, percentage, or year columns, it sums them up:
+      • Averaging 10 rows with year 2024 displays `YEAR = 20,240`
+      • 5 rows of 15% margin displays `MARGIN = 75%`
+  - Fix: Check column names for rate/ratio/year patterns; compute averages or exclude from KPI cards.
+
+[BUG-12] SINGLE-ROW AGGREGATE QUERIES COLLAPSE CHARTS (MEDIUM)
+  - File: `frontend/src/components/ChartSection.jsx` (Lines 52-59)
+  - Cause: When a query returns a single aggregate row without categorical columns 
+    (e.g., `SELECT SUM(revenue) AS total_revenue`), the heuristic checks fail and 
+    line 58 triggers `return null;`. The chart area completely vanishes without an empty state.
+  - Fix: Add fallback rendering for single-metric cards or radial gauges.
+
+[BUG-13] DATA HEADER PARSER ERASES VALID BUSINESS RECORDS (MEDIUM)
+  - File: `frontend/src/components/InsightSummary.jsx` (Lines 63-67)
+  - Cause: Lines under 35 characters containing "english", "hindi", or "bengali" trigger 
+    `continue;` to strip markdown section titles. Legitimate data rows like 
+    `"Hindi books sales: 120"` are silently dropped from display.
+  - Fix: Use strict regex matching for markdown header markers (`/^###?\s*(english|hindi|bengali)/i`).
+
+[BUG-14] DISK LEAK ON TRANSCRIPTION FAILURE (MEDIUM)
+  - File: `ai-core/src/controllers/speechController.js` (Lines 6-10)
+  - Cause: `fs.unlinkSync(filePath)` is placed at the end of the `try` block. If 
+    `transcribeAudio()` throws an error, temp files in `uploads/` are never deleted, 
+    gradually exhausting server disk space.
+  - Fix: Place `fs.unlinkSync` inside a `finally` block.
+
+[BUG-15] MISSING MULTER MIDDLEWARE ON AI-CORE /transcribe ROUTE (MEDIUM)
+  - File: `ai-core/src/routes/aiRoutes.js` (Line 10)
+  - Cause: Route `/transcribe` mounts `transcribeVoice` without `multer` upload middleware. 
+    `req.file` is always undefined when audio blobs are posted.
+
+
+================================================================================
+5. WHAT IT LACKS & GAPS (Security, Architecture, Stubbed UI)
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 SECURITY VULNERABILITIES
+--------------------------------------------------------------------------------
+
+[SEC-01] CRITICAL: AZURE SPEECH MASTER KEY LEAKED IN CLIENT BUNDLE
+  - File: `frontend/src/services/speech.service.js` (Lines 7-14)
+  - Code:
+      const SPEECH_KEY = import.meta.env.VITE_AZURE_SPEECH_KEY || "";
+      console.log("[Speech] Key loaded:", SPEECH_KEY ? `${SPEECH_KEY.substring(0, 8)}...✅` : "❌ MISSING");
+  - Vulnerability: Vite embeds all `VITE_` variables into production JS bundles. 
+    Anyone inspecting the network bundle or console can extract the master Azure 
+    Speech key and run up unauthorized cloud bills.
+  - Fix: Use backend token exchange (`GET /api/speech/token`) returning ephemeral 
+    authorization tokens via `SpeechSDK.SpeechConfig.fromAuthorizationToken()`.
+
+[SEC-02] CRITICAL: SERVER-SIDE REQUEST FORGERY (SSRF) VIA IP CAMERA INGESTION
+  - File: `backend/src/controllers/voiceSession.controller.js` (Lines 88-98)
+  - Code:
+      const url = new URL('/shot.jpg', req.body.ipCameraUrl).href;
+      const snapshotRes = await axios.get(url, { responseType: 'arraybuffer', timeout: 5000 });
+  - Vulnerability: An unauthenticated client can supply arbitrary URLs:
+      • `http://169.254.169.254/latest/meta-data/` (cloud metadata theft)
+      • `http://localhost:6379/` (internal Redis manipulation)
+      • `http://192.168.1.1/` (internal gateway/router access)
+    The server fetches the resource and returns the response in base64.
+  - Fix: Enforce a strict IP allowlist, block private IP ranges (RFC 1918), or reject remote URLs.
+
+[SEC-03] CRITICAL: SQL INJECTION VIA SUBQUERY INTERPOLATION
+  - File: `backend/src/controllers/query.controller.js` (Lines 12-16)
+  - Code:
+      const result = await request.query(`SELECT TOP 100 * FROM (${sql}) AS safe_query`);
+  - Vulnerability: String interpolation of user SQL allows attackers to escape the 
+    subquery or execute stacked commands. The regex blacklist in `sqlValidation.middleware.js` 
+    can be bypassed using comment injections (`D/**/ROP`), line breaks, or CTEs.
+  - Fix: Connect with a dedicated database user granted strictly `db_datareader` permissions.
+
+[SEC-04] CRITICAL: COMPLETELY UNAUTHENTICATED API ENDPOINTS
+  - Files: All route definitions across `backend/` and `ai-core/`
+  - Vulnerability: Zero authentication or authorization middleware exists:
+      • `/query` and `/nl-query`: Anyone can execute arbitrary SQL queries
+      • `/upload`: Anyone can upload files to the database and Azure Blob Storage
+      • `/demo/*`: Anyone can mutate live store inventory and force reorder alerts
+      • `/test-insert`: Anyone can execute raw SQL inserts
+  - Fix: Implement JWT verification or API key middleware across all endpoints.
+
+[SEC-05] HIGH: DISABLED TLS CERTIFICATE VERIFICATION (MAN-IN-THE-MIDDLE)
+  - Files: `ai-core/src/services/aiService.js` (Line 38), `backend/src/controllers/whatsapp.controller.js` (Line 153)
+  - Code:
+      const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+  - Vulnerability: Explicitly sets `rejectUnauthorized: false` when calling Azure OpenAI 
+    and downloading Twilio media, disabling SSL verification and exposing Twilio 
+    credentials and AI prompts to MitM interceptors.
+  - Fix: Remove `rejectUnauthorized: false`.
+
+[SEC-06] HIGH: CSV FORMULA INJECTION IN EXPORTS
+  - File: `frontend/src/components/RawDataTable.jsx` (Lines 22-41)
+  - Vulnerability: Data cells beginning with `=`, `+`, `-`, or `@` are exported 
+    without sanitization. When opened in Excel, they execute as macro formulas.
+  - Fix: Prepend a single quote (`'`) to any cell starting with `=`, `+`, `-`, or `@`.
+
+[SEC-07] HIGH: UNVERIFIED TWILIO WEBHOOK SIGNATURES
+  - File: `backend/src/controllers/whatsapp.controller.js`
+  - Vulnerability: The `/whatsapp` endpoint does not validate `x-twilio-signature`. 
+    Any external actor can POST forged WhatsApp payloads to deplete inventory or trigger alerts.
+  - Fix: Add Twilio's official `twilio.webhook()` validation middleware.
+
+--------------------------------------------------------------------------------
+5.2 STUBBED & FAKE UI FUNCTIONALITY
+--------------------------------------------------------------------------------
+
+1. Fake Search & Non-Functional Export in DataLedgerPage:
+   - File: `frontend/src/pages/DataLedgerPage.jsx` (Lines 74-86)
+   - The `<input>` has no `value` or `onChange` handler.
+   - The "Export CSV" `<button>` has no `onClick` handler.
+   - Both are purely decorative elements.
+
+2. Fake Computer Vision in Demo Panel:
+   - File: `backend/demo-panel/script.js` (Lines 113-145)
+   - Advertises "Product Vision (Demo)", but NEVER transmits webcam frames.
+   - It simply waits 2 seconds and displays hardcoded cards (Lays, Maggi, Coca-Cola).
+
+3. Statically Hardcoded Founder Kit Metrics:
+   - File: `frontend/src/pages/FounderKit.jsx` (Lines 158-174)
+   - "Market Risk: LOW", "Area Demand: HIGH", and "ROI Forecast: 24%" are 
+     hardcoded text strings not connected to any backend calculation.
+
+4. Dead Links in Sidebar:
+   - File: `frontend/src/components/Sidebar.jsx` (Lines 79-87)
+   - "Support" and "Setting" use `href="#"`, scrolling to top on click.
+
+5. Placeholder "Under Construction" Pages:
+   - File: `frontend/src/pages/UnderConstruction.jsx`
+   - Settings and Alerts routes simply display a 🚧 construction sign.
+
+--------------------------------------------------------------------------------
+5.3 ARCHITECTURAL GAPS
+--------------------------------------------------------------------------------
+
+1. Three Conflicting Speech Recognition Implementations:
+   - Implementation A: Native Web Speech API in `QuerySection.jsx` (Chrome-only)
+   - Implementation B: Azure Cognitive Services SDK in `FounderKit.jsx` & `MatchingDashboard.jsx`
+   - Implementation C: AI Core Speech Endpoint in `frontend/src/services/api.js` (`sendSpeech` - dead code)
+   - Impact: Inconsistent, fragmented user experience across pages.
+
+2. In-Memory Session Storage Blocks Horizontal Scaling:
+   - Files: `backend/src/services/session.service.js`, `ai-core/src/services/session.service.js`
+   - Active billing transactions, voice slot-filling context, and session states are 
+     held in local Node.js `Map` singletons. Scaling to multiple containers breaks all sessions.
+
+3. Complete Absence of Global State Management:
+   - Pages synchronize state solely via `sessionStorage.getItem('datasetUploaded')`.
+   - Navigating between pages loses query history and triggers uncoordinated refetches.
+
+4. Hardcoded URLs Bypassing Environment Variables:
+   - `MatchingDashboard.jsx` and `FounderKit.jsx` hardcode `http://localhost:5000/demo`.
+   - `ai-core/src/services/speechService.js` hardcodes `http://localhost:8000/event`.
+
+
+================================================================================
+6. CODE QUALITY & TECHNICAL DEBT AUDIT
+================================================================================
+
+1. Zero Automated Test Coverage:
+   - No test framework configured (no Jest, Vitest, Mocha, or Playwright).
+   - `test_db.js`, `test_push.js`, `test_webhook.js` are manual ad-hoc scripts.
+   - Zero unit, integration, or end-to-end tests exist across all three repositories.
+
+2. Missing Dependency in `ai-core/package.json`:
+   - `ai-core/src/services/speech.service.js:2` requires `form-data`.
+   - `form-data` is not listed in `dependencies`. Running in clean environments 
+     causes `MODULE_NOT_FOUND`.
+
+3. Invalid `main` Entry Point in `ai-core/package.json`:
+   - Lists `"main": "index.js"`, but `index.js` does not exist (`server.js` is the entry point).
+
+4. Silent Error Swallowing on Redis Disconnects:
+   - File: `backend/src/config/redis.js` (Lines 26-28)
+   - `redis.on("error", () => { /* Silent error */ });` drops all connection failures,
+     making caching issues invisible in server logs.
+
+5. Massive Unused Dependencies Bloating AI-Core:
+   - `ai-core/package.json` installs `@google/genai`, `@mistralai/mistralai`, `groq-sdk`, 
+     `openai`, `mssql`, and `sqlite3`, none of which are ever imported.
+
+6. Uncontrolled Exception Suppression:
+   - File: `ai-core/server.js` (Lines 10-11)
+   - `process.on("uncaughtException", console.error);` suppresses fatal crashes,
+     leaving the process running in a potentially corrupted state.
+
+
+================================================================================
+7. SENIOR SWE & PM ROADMAP TO REACH PRODUCTION LEVEL
+================================================================================
+
+PHASE 1: STABILIZE CORE RUNTIME & FIX P0 CRITICAL BUGS (Week 1 - 2)
+───────────────────────────────────────────────────────────────────
+Goal: Eliminate system-breaking bugs and make core flows functional.
+
+  [ ] Fix Speech Regex Bug: Change `/\\s+/` to `/\s+/` in `ai-core/src/services/speechService.js`.
+  [ ] Resolve Azure OpenAI o4-mini Rejection: Change system role to "developer" or merge 
+      into user prompt in `ai-core/src/services/aiService.js`.
+  [ ] Eliminate Concurrency Locks: Remove module-scoped `processing` and `inProgress` booleans; 
+      implement Redis-based distributed locks keyed by store ID.
+  [ ] Fix Normalization Collisions: Replace `.includes()` in `normalization.js` with exact 
+      word boundary token matching.
+  [ ] Atomic CSV Ingestion: Wrap database insertions in `upload.controller.js` inside 
+      `pool.transaction()` with automated rollback.
+  [ ] Fix Azure Speech Reconnect Loop: Add a 3-attempt retry limit and backoff to 
+      `frontend/src/services/speech.service.js`; call `recognizer.close()` on teardown.
+  [ ] Declare Missing Dependencies: Add `form-data` to `ai-core/package.json`; fix `"main": "server.js"`.
+
+PHASE 2: SECURITY HARDENING & MULTI-TENANCY (Week 3 - 4)
+────────────────────────────────────────────────────────
+Goal: Protect cloud resources, prevent data leaks, and lock down endpoints.
+
+  [ ] Remove Client-Side Azure Secret Key: Build `GET /api/speech/token` endpoint on the 
+      backend to issue short-lived Azure authorization tokens.
+  [ ] Restrict SSRF Vector: Block private/internal IP ranges for `ipCameraUrl`; enforce 
+      strict URL schema and hostname validation.
+  [ ] Re-enable TLS Certificate Verification: Remove all instances of `rejectUnauthorized: false`.
+  [ ] Add Authentication & RBAC: Implement JWT middleware on all Express routes; secure 
+      endpoints by tenant/store ID.
+  [ ] Implement Database Least Privilege: Configure the backend connection pool with 
+      read-only privileges for the query endpoint.
+  [ ] Add Twilio Webhook Validation: Mount `twilio.webhook()` on `/whatsapp`.
+  [ ] Sanitize CSV Exports: Prepend `'` to cells containing formula triggers (`=`, `+`, `-`, `@`).
+
+PHASE 3: INFRASTRUCTURE & CONTAINERIZATION (Week 5 - 6)
+───────────────────────────────────────────────────────
+Goal: Make the system deployable, repeatable, and observable.
+
+  [ ] Dockerize All Services: Create production multi-stage Dockerfiles for `frontend`, 
+      `backend`, and `ai-core`.
+  [ ] Docker Compose Orchestration: Author a root `docker-compose.yml` defining all three 
+      containers, local Redis, and MS SQL Server for one-command local dev.
+  [ ] Centralize Environment Configuration: Create comprehensive, synchronized `.env.example` 
+      files across all directories.
+  [ ] Structured Logging & Health Checks: Replace `console.log` with Pino/Winston; implement 
+      standardized `/health` and `/ready` endpoints.
+  [ ] Setup CI/CD Pipelines: Build GitHub Actions workflows for linting, type-checking, 
+      and automated testing on PRs.
+
+PHASE 4: CODE QUALITY & ARCHITECTURE REFACTOR (Week 7 - 8)
+──────────────────────────────────────────────────────────
+Goal: Clean technical debt and make the codebase maintainable.
+
+  [ ] Unify Speech Architecture: Choose a single speech pipeline (Azure Speech SDK via backend 
+      token exchange) and deprecate redundant services.
+  [ ] Global State Management: Implement Zustand in the React frontend to manage active 
+      datasets, query history, and voice sessions.
+  [ ] Wire Up Stubbed Features: Connect `DataLedgerPage` search input and CSV export button; 
+      replace hardcoded Founder Kit metrics with backend aggregations.
+  [ ] Add Automated Test Suite: Write Vitest/Jest unit tests for SQL generation, product 
+      normalization, and transaction processing; add Cypress/Playwright E2E tests for the query flow.
+  [ ] Clean Archive Code: Remove dead directories (`archive/Backend_sync/`, `archive/backend_review/`) 
+      from the repository working tree.
+
+================================================================================
+                               END OF AUDIT REPORT
+================================================================================

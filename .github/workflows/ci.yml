@@ -1,0 +1,108 @@
+name: DataTalk CI Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── FRONTEND CI ─────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend (Lint & Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Verify Production Build
+        run: npm run build
+        env:
+          VITE_API_URL: "http://localhost:5000"
+          VITE_AI_CORE_URL: "http://localhost:8000"
+
+  # ─── BACKEND CI ──────────────────────────────────────────────────────────────
+  backend:
+    name: Backend (Syntax & Service Checks)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Verify JavaScript Syntax
+        run: |
+          node --check src/server.js
+          node --check src/config/db.js
+          node --check src/config/redis.js
+          node --check src/utils/normalization.js
+          node --check mock-ai.js
+
+      - name: Run Tests
+        run: npm test
+
+  # ─── AI-CORE CI ──────────────────────────────────────────────────────────────
+  ai-core:
+    name: AI-Core (Syntax & Dependency Validation)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-core
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: ai-core/package-lock.json
+
+      - name: Install Dependencies
+        run: npm install # allows installing new dependencies like form-data
+
+      - name: Verify JavaScript Syntax
+        run: |
+          node --check server.js
+          node --check src/services/aiService.js
+          node --check src/services/pipeline.service.js
+          node --check src/controllers/aiController.js
+
+      - name: Run Tests
+        run: npm test
