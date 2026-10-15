@@ -49,3 +49,4 @@ coverage/
 archive/**/package-lock.json
 
 out*.txt
+*.txt
